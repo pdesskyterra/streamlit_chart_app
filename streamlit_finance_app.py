@@ -23,9 +23,22 @@ def fetch_notion_data():
     for result in response['results']:
         props = result['properties']
         try:
+            # Extract and parse client formula string
+            client_formula = props.get("Client", {}).get("formula", {}).get("string", "")
+            client_names = []
+            if client_formula:
+                try:
+                    parsed = ast.literal_eval(client_formula)
+                    if isinstance(parsed, list):
+                        client_names = parsed
+                    else:
+                        client_names = [parsed]
+                except:
+                    client_names = [client_formula] if client_formula else []
+
             row = {
                 "Month": props["Month"]['select']['name'],
-                "Client": props["Client"]['rich_text'][0]['plain_text'],
+                "Client": ", ".join(client_names),
                 "Paid Revenue": props["Paid Revenue"]['number'],
                 "Potential Revenue": float(props["Potential Revenue"]['rich_text'][0]['plain_text'].replace('$','').replace(',','')),
                 "Monthly Employee Cost": props["Monthly Employee Cost"]['number'],
@@ -36,6 +49,7 @@ def fetch_notion_data():
             print("Skipping row due to error:", e)
             continue
     return pd.DataFrame(results)
+
 
 df = fetch_notion_data()
 if df.empty:
