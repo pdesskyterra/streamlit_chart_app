@@ -37,14 +37,12 @@ def fetch_notion_data():
             month = props.get("Month", {}).get("select", {}).get("name", None)
 
             # --- Paid Revenue (rollup -> array[0].number) ---
-            paid_revenue = props.get("Paid Revenue", {}).get("rollup", {}).get("array", [{}])[0].get("number", 0)
+            paid_revenue = props.get("Paid Revenue", {}).get("rollup", {}).get("number", 0)
+
 
             # --- Potential Revenue (rich text string "$25,000") ---
-            potential_text = props.get("Potential Revenue", {}).get("rich_text", [])
-            potential_revenue = 0
-            if potential_text and 'plain_text' in potential_text[0]:
-                raw_val = potential_text[0]['plain_text'].replace('$', '').replace(',', '')
-                potential_revenue = float(raw_val) if raw_val else 0
+            potential_revenue = props.get("Potential Revenue", {}).get("rollup", {}).get("number", 0)
+
 
             # --- Monthly Employee Cost (formula.number) ---
             monthly_cost = props.get("Monthly Employee Cost", {}).get("formula", {}).get("number", 0)
