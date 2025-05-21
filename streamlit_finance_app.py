@@ -5,6 +5,7 @@ import numpy as np
 from matplotlib.ticker import FuncFormatter
 from matplotlib.patches import Patch
 from notion_client import Client
+import ast
 
 # --- CONFIG ---
 NOTION_TOKEN = "ntn_C39727399952EQvWgyq93N3o2dpj78XQZjhLfCpYqXs2vo"
@@ -20,34 +21,44 @@ def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
     results = []
     response = notion.databases.query(database_id=DATABASE_ID)
+
     for result in response['results']:
         props = result['properties']
         try:
-            # Extract and parse client formula string
+            # Parse client names from formula string
             client_formula = props.get("Client", {}).get("formula", {}).get("string", "")
-            client_names = []
-            if client_formula:
-                try:
-                    parsed = ast.literal_eval(client_formula)
-                    if isinstance(parsed, list):
-                        client_names = parsed
-                    else:
-                        client_names = [parsed]
-                except:
-                    client_names = [client_formula] if client_formula else []
+            try:
+                parsed = ast.literal_eval(client_formula)
+                client_names = parsed if isinstance(parsed, list) else [parsed]
+            except:
+                client_names = [client_formula] if client_formula else []
+
+            # Defensive parsing for all values
+            month = props.get("Month", {}).get("select", {}).get("name", None)
+            paid_revenue = props.get("Paid Revenue", {}).get("rollup", {}).get("array", [{}])[0].get("number", 0)
+            potential_text = props.get("Potential Revenue", {}).get("rich_text", [])
+            potential_revenue = 0
+            if potential_text and 'plain_text' in potential_text[0]:
+                raw_val = potential_text[0]['plain_text'].replace('$', '').replace(',', '')
+                potential_revenue = float(raw_val) if raw_val else 0
+
+            monthly_cost = props.get("Monthly Employee Cost", {}).get("formula", {}).get("number", 0)
+            overhead = props.get("Overhead Costs", {}).get("number", 0)
 
             row = {
-                "Month": props["Month"]['select']['name'],
+                "Month": month,
                 "Client": ", ".join(client_names),
-                "Paid Revenue": props["Paid Revenue"]['number'],
-                "Potential Revenue": float(props["Potential Revenue"]['rich_text'][0]['plain_text'].replace('$','').replace(',','')),
-                "Monthly Employee Cost": props["Monthly Employee Cost"]['number'],
-                "Overhead Costs": props["Overhead Costs"]['number']
+                "Paid Revenue": paid_revenue,
+                "Potential Revenue": potential_revenue,
+                "Monthly Employee Cost": monthly_cost,
+                "Overhead Costs": overhead
             }
             results.append(row)
+
         except Exception as e:
             print("Skipping row due to error:", e)
             continue
+
     return pd.DataFrame(results)
 
 

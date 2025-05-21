@@ -3,3 +3,4 @@ pandas>=2.2.2
 matplotlib>=3.8.4
 numpy>=1.26.4
 notion-client>=2.2.1
+ast>=1.0.0
