@@ -107,6 +107,10 @@ tab1, tab2 = st.tabs(["📊 Grouped Bar Chart", "📈 Line Chart"])
 
 with tab1:
     # === Grouped Bar Chart ===
+    month_order = [
+        'November 2024', 'December 2024', 'February 2025', 'March 2025', 
+        'April 2025', 'May 2025', 'June 2025', 'July 2025', 'August 2025'
+    ]
     client_df['Month'] = pd.Categorical(client_df['Month'], categories=month_order, ordered=True)
     client_df = client_df.sort_values(['Month', 'Client'])
     all_clients = sorted(client_df['Client'].unique())
@@ -117,7 +121,6 @@ with tab1:
 
     paid_matrix = np.zeros((len(all_clients), len(month_order)))
     potential_matrix = np.zeros((len(all_clients), len(month_order)))
-
     for i, client in enumerate(all_clients):
         for j, month in enumerate(month_order):
             rows = client_df[(client_df['Client'] == client) & (client_df['Month'] == month)]
@@ -127,19 +130,15 @@ with tab1:
     fig, ax = plt.subplots(figsize=(22, 12))
     client_colors = plt.cm.tab20(np.linspace(0, 1, len(all_clients)))
     bottom_paid = np.zeros(len(month_order))
-
     for i, client in enumerate(all_clients):
         ax.bar(revenue_positions, paid_matrix[i], bottom=bottom_paid, width=width, color=client_colors[i])
         bottom_paid += paid_matrix[i]
-        ax.bar(revenue_positions, potential_matrix[i], bottom=bottom_paid, width=width,
-               color=client_colors[i], alpha=0.5, hatch='///')
+        ax.bar(revenue_positions, potential_matrix[i], bottom=bottom_paid, width=width, color=client_colors[i], alpha=0.5, hatch='///')
         bottom_paid += potential_matrix[i]
 
-    # Example static expense values (can be replaced by actual monthly aggregates)
     employee_costs = [15000, 15000, 15000, 15000, 15000, 32500.8, 32500.8, 32500.8, 32500.8]
     overhead_costs = [2000, 2000, 3000, 3000, 4000, 4000, 4000, 4000, 4000]
     expense_positions = x + width / 2
-
     ax.bar(expense_positions, employee_costs, width=width, color='#d62728')
     ax.bar(expense_positions, overhead_costs, bottom=employee_costs, width=width, color='#9467bd')
 
@@ -161,14 +160,20 @@ with tab1:
     ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.01, 1), fontsize=12, title="Chart Components", title_fontsize=14)
 
     client_patches = [Patch(facecolor=client_colors[i]) for i in range(len(all_clients))]
-    ax.legend(handles=client_patches, labels=all_clients, loc='upper left', bbox_to_anchor=(1.01, 0.6),
-              fontsize=12, title="Clients", title_fontsize=14)
+    client_legend = ax.legend(handles=client_patches, labels=all_clients, loc='upper left', bbox_to_anchor=(1.01, 0.6),
+                              fontsize=12, title="Clients", title_fontsize=14)
+    ax.add_artist(client_legend)
+
     plt.tight_layout()
     plt.subplots_adjust(right=0.72)
     st.pyplot(fig)
 
+
 with tab2:
     # === Line Chart for Total Paid & Potential Revenue ===
+    client_df['Month'] = pd.Categorical(client_df['Month'], categories=month_order, ordered=True)
+    client_df = client_df.sort_values(['Month', 'Client'])
+
     monthly_totals = client_df.groupby('Month').agg({'Paid Revenue': 'sum', 'Potential Revenue': 'sum'}).reindex(month_order)
 
     fig2, ax2 = plt.subplots(figsize=(16, 8))
@@ -177,12 +182,12 @@ with tab2:
     ax2.plot(x, monthly_totals['Potential Revenue'], 'b-', linewidth=3, marker='s', markersize=8, label='Total Potential Revenue')
 
     for i, p in enumerate(monthly_totals['Paid Revenue']):
-        ax2.annotate(f'${p:,.0f}', xy=(x[i], p), xytext=(0, 10), textcoords='offset points',
-                     ha='center', fontsize=12, color='darkred')
+        ax2.annotate(f'${p:,.0f}', xy=(x[i], p), xytext=(0, 10 if p > 0 else -20), textcoords='offset points',
+                     ha='center', va='bottom' if p > 0 else 'top', fontsize=12, color='darkred')
 
     for i, p in enumerate(monthly_totals['Potential Revenue']):
-        ax2.annotate(f'${p:,.0f}', xy=(x[i], p), xytext=(0, 20), textcoords='offset points',
-                     ha='center', fontsize=12, color='darkblue')
+        ax2.annotate(f'${p:,.0f}', xy=(x[i], p), xytext=(0, 20 if p > 0 else -30), textcoords='offset points',
+                     ha='center', va='bottom' if p > 0 else 'top', fontsize=12, color='darkblue')
 
     ax2.set_xticks(x)
     ax2.set_xticklabels([m.split(' ')[0][:3] + ' ' + m.split(' ')[1] for m in month_order], rotation=45, fontsize=12)
@@ -194,5 +199,6 @@ with tab2:
     ax2.set_xlabel('Month', fontsize=14)
     ax2.axhline(y=0, color='k', linestyle='-', alpha=0.3)
     ax2.legend(fontsize=14, loc='upper left')
+
     plt.tight_layout()
     st.pyplot(fig2)
