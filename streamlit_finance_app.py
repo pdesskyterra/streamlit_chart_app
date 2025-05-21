@@ -25,7 +25,7 @@ def fetch_notion_data():
     for result in response['results']:
         props = result['properties']
         try:
-            # Parse client names from formula string
+            # --- Client parsing ---
             client_formula = props.get("Client", {}).get("formula", {}).get("string", "")
             try:
                 parsed = ast.literal_eval(client_formula)
@@ -33,16 +33,23 @@ def fetch_notion_data():
             except:
                 client_names = [client_formula] if client_formula else []
 
-            # Defensive parsing for all values
+            # --- Month ---
             month = props.get("Month", {}).get("select", {}).get("name", None)
+
+            # --- Paid Revenue (rollup -> array[0].number) ---
             paid_revenue = props.get("Paid Revenue", {}).get("rollup", {}).get("array", [{}])[0].get("number", 0)
+
+            # --- Potential Revenue (rich text string "$25,000") ---
             potential_text = props.get("Potential Revenue", {}).get("rich_text", [])
             potential_revenue = 0
             if potential_text and 'plain_text' in potential_text[0]:
                 raw_val = potential_text[0]['plain_text'].replace('$', '').replace(',', '')
                 potential_revenue = float(raw_val) if raw_val else 0
 
+            # --- Monthly Employee Cost (formula.number) ---
             monthly_cost = props.get("Monthly Employee Cost", {}).get("formula", {}).get("number", 0)
+
+            # --- Overhead (number) ---
             overhead = props.get("Overhead Costs", {}).get("number", 0)
 
             row = {
@@ -60,6 +67,7 @@ def fetch_notion_data():
             continue
 
     return pd.DataFrame(results)
+
 
 
 df = fetch_notion_data()
