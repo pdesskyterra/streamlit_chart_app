@@ -106,11 +106,7 @@ client_df = pd.DataFrame(processed_data)
 tab1, tab2 = st.tabs(["📊 Grouped Bar Chart", "📈 Line Chart"])
 
 with tab1:
-    # === Grouped Bar Chart ===
-    month_order = [
-        'November 2024', 'December 2024', 'February 2025', 'March 2025', 
-        'April 2025', 'May 2025', 'June 2025', 'July 2025', 'August 2025'
-    ]
+    # === Fixed Grouped Bar Chart ===
     client_df['Month'] = pd.Categorical(client_df['Month'], categories=month_order, ordered=True)
     client_df = client_df.sort_values(['Month', 'Client'])
     all_clients = sorted(client_df['Client'].unique())
@@ -119,29 +115,37 @@ with tab1:
     width = 0.35
     revenue_positions = x - width / 2
 
+    # Build revenue matrices
     paid_matrix = np.zeros((len(all_clients), len(month_order)))
     potential_matrix = np.zeros((len(all_clients), len(month_order)))
+
     for i, client in enumerate(all_clients):
         for j, month in enumerate(month_order):
             rows = client_df[(client_df['Client'] == client) & (client_df['Month'] == month)]
-            paid_matrix[i, j] = rows['Paid Revenue'].sum()
-            potential_matrix[i, j] = rows['Potential Revenue'].sum() - rows['Paid Revenue'].sum()
+            paid = rows['Paid Revenue'].sum()
+            potential = rows['Potential Revenue'].sum()
+            paid_matrix[i, j] = paid
+            potential_matrix[i, j] = potential - paid
 
     fig, ax = plt.subplots(figsize=(22, 12))
     client_colors = plt.cm.tab20(np.linspace(0, 1, len(all_clients)))
     bottom_paid = np.zeros(len(month_order))
+
     for i, client in enumerate(all_clients):
         ax.bar(revenue_positions, paid_matrix[i], bottom=bottom_paid, width=width, color=client_colors[i])
         bottom_paid += paid_matrix[i]
-        ax.bar(revenue_positions, potential_matrix[i], bottom=bottom_paid, width=width, color=client_colors[i], alpha=0.5, hatch='///')
+        ax.bar(revenue_positions, potential_matrix[i], bottom=bottom_paid, width=width,
+               color=client_colors[i], alpha=0.5, hatch='///')
         bottom_paid += potential_matrix[i]
 
+    # Stack employee & overhead costs
     employee_costs = [15000, 15000, 15000, 15000, 15000, 32500.8, 32500.8, 32500.8, 32500.8]
     overhead_costs = [2000, 2000, 3000, 3000, 4000, 4000, 4000, 4000, 4000]
     expense_positions = x + width / 2
     ax.bar(expense_positions, employee_costs, width=width, color='#d62728')
     ax.bar(expense_positions, overhead_costs, bottom=employee_costs, width=width, color='#9467bd')
 
+    # Axes and grid
     ax.set_xticks(x)
     ax.set_xticklabels([m.split(' ')[0][:3] + ' ' + m.split(' ')[1] for m in month_order], rotation=45, fontsize=12)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: '${:,.0f}'.format(x)))
@@ -151,13 +155,14 @@ with tab1:
     ax.set_ylabel('Amount ($)', fontsize=14)
     ax.set_xlabel('Month', fontsize=14)
 
-    legend_elements = [
+    # Legends
+    chart_legend = [
         Patch(facecolor='#1f77b4', label='Client Revenue (Paid)'),
         Patch(facecolor='#1f77b4', alpha=0.5, hatch='///', label='Client Revenue (Potential)'),
         Patch(facecolor='#d62728', label='Employee Costs'),
         Patch(facecolor='#9467bd', label='Overhead Costs')
     ]
-    ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.01, 1), fontsize=12, title="Chart Components", title_fontsize=14)
+    ax.legend(handles=chart_legend, loc='upper left', bbox_to_anchor=(1.01, 1), fontsize=12, title="Chart Components", title_fontsize=14)
 
     client_patches = [Patch(facecolor=client_colors[i]) for i in range(len(all_clients))]
     client_legend = ax.legend(handles=client_patches, labels=all_clients, loc='upper left', bbox_to_anchor=(1.01, 0.6),
@@ -167,6 +172,7 @@ with tab1:
     plt.tight_layout()
     plt.subplots_adjust(right=0.72)
     st.pyplot(fig)
+
 
 
 with tab2:
