@@ -40,14 +40,15 @@ def fetch_notion_data():
             except: pot_vals.append(0.0)
 
         n = len(clients)
-        if n == 0: continue
+        if n == 0:
+            continue
 
         paid = props["Paid Revenue"]["rollup"]["number"]
         emp  = props["Monthly Employee Cost"]["formula"]["number"]
         ovh  = props["Overhead Costs"]["number"]
         month = props["Month"]["select"]["name"]
 
-        # Pair or average potentials
+        # Pair or average
         if len(pot_vals) == n:
             pairs = zip(clients, pot_vals)
         else:
@@ -58,10 +59,10 @@ def fetch_notion_data():
             rows.append({
                 "Month": month,
                 "Client": client,
-                "Paid Revenue": paid/n,
+                "Paid Revenue": paid / n,
                 "Potential Revenue": pot,
-                "Monthly Employee Cost": emp/n,
-                "Overhead Costs": ovh/n
+                "Monthly Employee Cost": emp / n,
+                "Overhead Costs": ovh / n
             })
 
     return pd.DataFrame(rows)
@@ -82,7 +83,6 @@ df = df.sort_values(['Month','Client'])
 monthly = df.groupby("Month")[
     ["Paid Revenue","Potential Revenue","Monthly Employee Cost","Overhead Costs"]
 ].sum().reindex(month_order)
-
 monthly["Total Expenses"]      = monthly["Monthly Employee Cost"] + monthly["Overhead Costs"]
 monthly["Profit (Paid)"]       = monthly["Paid Revenue"] - monthly["Total Expenses"]
 monthly["Profit (Potential)"]  = monthly["Potential Revenue"] - monthly["Total Expenses"]
@@ -153,7 +153,7 @@ with tab1:
     comp_legend = ax.legend(
         handles=legend1,
         loc="upper left",
-        bbox_to_anchor=(1.01, 1),
+        bbox_to_anchor=(1.01,1),
         title="Components"
     )
 
@@ -161,15 +161,12 @@ with tab1:
     client_legend = ax.legend(
         handles=client_patches,
         loc="upper left",
-        bbox_to_anchor=(1.01, 0.6),
+        bbox_to_anchor=(1.01,0.6),
         title="Clients"
     )
 
-    # Add both
     ax.add_artist(comp_legend)
     ax.add_artist(client_legend)
-
-    # Make room for legends
     fig.subplots_adjust(right=0.75)
 
     st.pyplot(fig)
@@ -178,30 +175,42 @@ with tab2:
     fig2, ax2 = plt.subplots(figsize=(16,8))
 
     # Four key lines
-    ax2.plot(x, monthly["Paid Revenue"],      'r-',  linewidth=3, marker='o', label='Paid Revenue')
-    ax2.plot(x, monthly["Potential Revenue"], 'b-',  linewidth=3, marker='s', label='Potential Revenue')
-    ax2.plot(x, monthly["Profit (Paid)"],      'g--', linewidth=2.5, marker='^', label='Profit (Paid)')
-    ax2.plot(x, monthly["Profit (Potential)"], 'c--', linewidth=2.5, marker='v', label='Profit (Potential)')
+    l1, = ax2.plot(x, monthly["Paid Revenue"],      'r-',  linewidth=3, marker='o', label='Paid Revenue')
+    l2, = ax2.plot(x, monthly["Potential Revenue"], 'b-',  linewidth=3, marker='s', label='Potential Revenue')
+    l3, = ax2.plot(x, monthly["Profit (Paid)"],      'g--', linewidth=2.5, marker='^', label='Profit (Paid)')
+    l4, = ax2.plot(x, monthly["Profit (Potential)"], 'c--', linewidth=2.5, marker='v', label='Profit (Potential)')
 
     # Secondary axis for profit margin
     ax3 = ax2.twinx()
-    ax3.plot(x, monthly["Profit Margin (%)"], 'm-.', linewidth=2, marker='d', label='Profit Margin (%)')
+    l5, = ax3.plot(
+        x, monthly["Profit Margin (%)"], 'm-.',
+        linewidth=2, marker='d', label='Profit Margin (%)'
+    )
     ax3.set_ylabel("Profit Margin (%)")
     ax3.yaxis.set_major_formatter(FuncFormatter(lambda p, _: f"{p:.0f}%"))
 
-    # Annotate profits
+    # Annotate profits & % margins
     for i in range(len(x)):
+        # real profit
         ax2.annotate(
             f"${monthly['Profit (Paid)'].iloc[i]:,.0f}",
             (x[i], monthly['Profit (Paid)'].iloc[i]),
             textcoords="offset points", xytext=(0,10),
             ha='center', color='green', fontsize=9
         )
+        # potential profit
         ax2.annotate(
             f"${monthly['Profit (Potential)'].iloc[i]:,.0f}",
             (x[i], monthly['Profit (Potential)'].iloc[i]),
             textcoords="offset points", xytext=(0,20),
             ha='center', color='teal', fontsize=9
+        )
+        # profit margin %
+        ax3.annotate(
+            f"{monthly['Profit Margin (%)'].iloc[i]:.0f}%",
+            (x[i], monthly['Profit Margin (%)'].iloc[i]),
+            textcoords="offset points", xytext=(10,0),
+            ha='left', color='m', fontsize=9
         )
 
     # Formatting
@@ -216,12 +225,21 @@ with tab2:
     ax2.set_xlabel("Month")
     ax2.set_ylabel("Amount ($)")
 
-    # Legends
-    primary = ax2.legend(loc="upper left", bbox_to_anchor=(1.01, 1))
-    secondary = ax3.legend(loc="upper left", bbox_to_anchor=(1.01, 0.8))
-    ax2.add_artist(primary)
-    ax2.add_artist(secondary)
+    # Legends: primary and secondary on ax2
+    legend_primary = ax2.legend(
+        handles=[l1,l2,l3,l4],
+        labels=['Paid Revenue','Potential Revenue','Profit (Paid)','Profit (Potential)'],
+        loc="upper left", bbox_to_anchor=(1.01,1),
+        title="Lines"
+    )
+    ax2.add_artist(legend_primary)
+
+    legend_margin = ax2.legend(
+        handles=[l5],
+        labels=['Profit Margin (%)'],
+        loc="upper left", bbox_to_anchor=(1.01,0.8),
+        title="Margin"
+    )
 
     fig2.subplots_adjust(right=0.75)
-
     st.pyplot(fig2)
