@@ -8,8 +8,8 @@ from notion_client import Client
 import ast
 
 # --- CONFIG ---
-NOTION_TOKEN = "ntn_C39727399952EQvWgyq93N3o2dpj78XQZjhLfCpYqXs2vo"
-DATABASE_ID = "1f50eccb339b802699b7d1d1e0d08134"
+NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
+DATABASE_ID = st.secrets["DATABASE_ID"]
 
 # --- PAGE SETUP ---
 st.set_page_config(layout="wide")
