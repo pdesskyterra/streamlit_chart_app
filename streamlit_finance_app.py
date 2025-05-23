@@ -20,8 +20,8 @@ st.title("📊 Profit & Expense Tracker")
 def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
     rows = []
-    response = notion.databases.query(database_id=DATABASE_ID)
-    for result in response["results"]:
+    resp = notion.databases.query(database_id=DATABASE_ID)
+    for result in resp["results"]:
         props = result["properties"]
         # Split clients
         raw = props["Client"]["formula"]["string"]
@@ -36,7 +36,7 @@ def fetch_notion_data():
         for v in pot_raw:
             try:    pot_vals.append(float(v))
             except: pot_vals.append(0.0)
-        # Base metrics
+        # Base values
         n = len(clients)
         if n == 0: continue
         paid = props["Paid Revenue"]["rollup"]["number"]
@@ -53,10 +53,10 @@ def fetch_notion_data():
             rows.append({
                 "Month": month,
                 "Client": client,
-                "Paid Revenue": paid/n,
+                "Paid Revenue": paid / n,
                 "Potential Revenue": pot,
-                "Monthly Employee Cost": emp/n,
-                "Overhead Costs": ovh/n
+                "Monthly Employee Cost": emp / n,
+                "Overhead Costs": ovh / n
             })
     return pd.DataFrame(rows)
 
@@ -76,12 +76,20 @@ df = df.sort_values(['Month','Client'])
 monthly = df.groupby("Month")[
     ["Paid Revenue","Potential Revenue","Monthly Employee Cost","Overhead Costs"]
 ].sum().reindex(month_order)
-monthly["Total Expenses"]      = monthly["Monthly Employee Cost"] + monthly["Overhead Costs"]
-monthly["Profit (Paid)"]       = monthly["Paid Revenue"] - monthly["Total Expenses"]
-monthly["Profit (Potential)"]  = monthly["Potential Revenue"] - monthly["Total Expenses"]
-# Profit margins %
-monthly["Paid Margin (%)"]     = monthly["Profit (Paid)"] / monthly["Paid Revenue"] * 100
-monthly["Potential Margin (%)"]= monthly["Profit (Potential)"] / monthly["Potential Revenue"] * 100
+monthly["Total Expenses"]     = monthly["Monthly Employee Cost"] + monthly["Overhead Costs"]
+monthly["Profit (Paid)"]      = monthly["Paid Revenue"] - monthly["Total Expenses"]
+monthly["Profit (Potential)"]= monthly["Potential Revenue"] - monthly["Total Expenses"]
+# margin only when revenue > 0
+monthly["Paid Margin (%)"]     = np.where(
+    monthly["Paid Revenue"]>0,
+    monthly["Profit (Paid)"] / monthly["Paid Revenue"] * 100,
+    np.nan
+)
+monthly["Potential Margin (%)"]= np.where(
+    monthly["Potential Revenue"]>0,
+    monthly["Profit (Potential)"] / monthly["Potential Revenue"] * 100,
+    np.nan
+)
 
 clients = sorted(df['Client'].unique())
 colors  = dict(zip(clients, plt.cm.tab20(np.linspace(0,1,len(clients)))))
@@ -94,13 +102,14 @@ tab1, tab2 = st.tabs(["📊 Bar Chart","📈 Line Chart"])
 with tab1:
     fig, ax = plt.subplots(figsize=(22,12))
 
-    # 1) stacked client revenue
+    # 1) Stacked client revenue
     stack = np.zeros(len(month_order))
     grouped = df.groupby(['Month','Client']).sum().reset_index()
     for client in clients:
         cd = (grouped[grouped["Client"]==client]
               .set_index("Month")
-              .reindex(month_order).fillna(0))
+              .reindex(month_order)
+              .fillna(0))
         paid_vals = cd["Paid Revenue"].values
         pot_vals  = cd["Potential Revenue"].values
         delta     = np.maximum(0, pot_vals - paid_vals)
@@ -111,13 +120,13 @@ with tab1:
                color=colors[client], alpha=0.5, hatch='///')
         stack += delta
 
-    # 2) costs
+    # 2) Employee + overhead
     emp_costs = monthly["Monthly Employee Cost"].values
     ovh_costs = monthly["Overhead Costs"].values
     ax.bar(x+width/2, emp_costs, width, color="#d62728")
     ax.bar(x+width/2, ovh_costs, width, bottom=emp_costs, color="#9467bd")
 
-    # 3) highlight negative‐profit months
+    # 3) Highlight shortages
     for i, prof in enumerate(monthly["Profit (Paid)"]):
         if prof < 0:
             ax.bar(x[i]-width/2,
@@ -125,24 +134,22 @@ with tab1:
                    width=width, fill=False,
                    edgecolor='red', linewidth=2)
 
-    # 4) formatting
+    # 4) Formatting
     ax.set_xticks(x)
-    ax.set_xticklabels(
-        [m.split()[0][:3] + ' ' + m.split()[1] for m in month_order],
-        rotation=45
-    )
+    ax.set_xticklabels([m.split()[0][:3] + ' ' + m.split()[1] for m in month_order],
+                       rotation=45)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"${y:,.0f}"))
     ax.set_title("Revenue (by Client) & Expenses (Employee + Overhead)", fontsize=18)
     ax.set_xlabel("Month"); ax.set_ylabel("Amount ($)")
     ax.grid(axis='y', linestyle='--', alpha=0.7)
 
-    # 5) legends
-    # adjust for legends
-    fig.subplots_adjust(right=0.80)
+    # Reserve right margin for legends
+    fig.tight_layout(rect=[0,0,0.75,1])
 
+    # 5a) Components legend
     legend1 = [
-        Patch(facecolor="#1f77b4", label="Client Rev (Paid)"),
-        Patch(facecolor="#1f77b4", alpha=0.5, hatch="///", label="Client Rev (Potential)"),
+        Patch(facecolor="#1f77b4", label="Client Revenue (Paid)"),
+        Patch(facecolor="#1f77b4", alpha=0.5, hatch="///", label="Client Revenue (Potential)"),
         Patch(facecolor="#d62728", label="Employee Costs"),
         Patch(facecolor="#9467bd", label="Overhead Costs"),
     ]
@@ -151,6 +158,7 @@ with tab1:
                          title="Components")
     ax.add_artist(comp_leg)
 
+    # 5b) Clients legend
     client_patches = [Patch(facecolor=colors[c], label=c) for c in clients]
     client_leg = ax.legend(handles=client_patches,
                            loc="upper left", bbox_to_anchor=(1.0,0.6),
@@ -159,23 +167,24 @@ with tab1:
 
     st.pyplot(fig)
 
+
 with tab2:
     fig2, ax2 = plt.subplots(figsize=(16,8))
 
-    # primary lines
+    # Primary lines
     l1, = ax2.plot(x, monthly["Paid Revenue"],      'r-',  lw=3, marker='o', label='Paid Revenue')
     l2, = ax2.plot(x, monthly["Potential Revenue"], 'b-',  lw=3, marker='s', label='Potential Revenue')
     l3, = ax2.plot(x, monthly["Profit (Paid)"],      'g--', lw=2.5, marker='^', label='Profit (Paid)')
     l4, = ax2.plot(x, monthly["Profit (Potential)"], 'c--', lw=2.5, marker='v', label='Profit (Potential)')
 
-    # secondary: two margin % lines
+    # Secondary: margin % lines
     ax3 = ax2.twinx()
     l5, = ax3.plot(x, monthly["Paid Margin (%)"],      'm-.', lw=2, marker='d', label='Paid Margin (%)')
     l6, = ax3.plot(x, monthly["Potential Margin (%)"], 'y-.', lw=2, marker='x', label='Potential Margin (%)')
     ax3.set_ylabel("Profit Margin (%)")
     ax3.yaxis.set_major_formatter(FuncFormatter(lambda p, _: f"{p:.0f}%"))
 
-    # annotate profits
+    # Annotate
     for i in range(len(x)):
         ax2.annotate(f"${monthly['Profit (Paid)'].iloc[i]:,.0f}",
                      (x[i], monthly['Profit (Paid)'].iloc[i]),
@@ -185,24 +194,33 @@ with tab2:
                      (x[i], monthly['Profit (Potential)'].iloc[i]),
                      textcoords="offset points", xytext=(0,20),
                      ha='center', color='teal', fontsize=9)
-        ax3.annotate(f"{monthly['Paid Margin (%)'].iloc[i]:.0f}%\n{monthly['Potential Margin (%)'].iloc[i]:.0f}%",
-                     (x[i], monthly['Potential Margin (%)'].iloc[i]),
-                     textcoords="offset points", xytext=(10,0),
-                     ha='left', color='purple', fontsize=8)
+        # margin annotations
+        pm = monthly["Paid Margin (%)"].iloc[i]
+        qm = monthly["Potential Margin (%)"].iloc[i]
+        if not np.isnan(pm):
+            ax3.annotate(f"{pm:.0f}%",
+                         (x[i], pm),
+                         textcoords="offset points", xytext=(10,0),
+                         ha='left', color='m', fontsize=8)
+        if not np.isnan(qm):
+            ax3.annotate(f"{qm:.0f}%",
+                         (x[i], qm),
+                         textcoords="offset points", xytext=(10,-10),
+                         ha='left', color='y', fontsize=8)
 
-    # formatting
+    # Formatting
     ax2.set_xticks(x)
-    ax2.set_xticklabels(
-        [m.split()[0][:3] + ' ' + m.split()[1] for m in month_order],
-        rotation=45
-    )
+    ax2.set_xticklabels([m.split()[0][:3] + ' ' + m.split()[1] for m in month_order],
+                        rotation=45)
     ax2.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"${y:,.0f}"))
     ax2.grid(True, linestyle='--', alpha=0.7)
     ax2.set_title("Paid, Potential, Profit & Margin Over Time", fontsize=18)
     ax2.set_xlabel("Month"); ax2.set_ylabel("Amount ($)")
 
-    # legends
-    fig2.subplots_adjust(right=0.75)
+    # Reserve right margin
+    fig2.tight_layout(rect=[0,0,0.75,1])
+
+    # Legends
     primary_leg = ax2.legend(handles=[l1,l2,l3,l4],
                              loc="upper left", bbox_to_anchor=(1.0,1),
                              title="Amounts")
@@ -210,4 +228,5 @@ with tab2:
     margin_leg = ax2.legend(handles=[l5,l6],
                             loc="upper left", bbox_to_anchor=(1.0,0.75),
                             title="Margins")
+
     st.pyplot(fig2)
