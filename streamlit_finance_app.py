@@ -138,7 +138,7 @@ with tab1:
     ax.grid(axis='y', linestyle='--', alpha=0.7)
 
     # 5) legends at figure-level
-    fig.tight_layout(rect=[0,0,0.5,1])
+    fig.tight_layout(rect=[0,0,0.875,1])
 
     # components legend
     comp_handles = [
