@@ -71,16 +71,9 @@ df['Month'] = pd.Categorical(df['Month'], categories=month_order, ordered=True)
 df = df[df['Month'].notna()].sort_values(['Month','Client'])
 
 monthly = df.groupby("Month")[
-    ["Paid Revenue","Potential Revenue",
-     "Monthly Employee Cost","Overhead Costs"]
+    ["Paid Revenue","Potential Revenue","Monthly Employee Cost","Overhead Costs"]
 ].sum().reindex(month_order)
-monthly["Total Expenses"]       = monthly["Monthly Employee Cost"] + monthly["Overhead Costs"]
-monthly["Profit (Potential)"]   = monthly["Potential Revenue"] - monthly["Total Expenses"]
-monthly["Potential Margin (%)"] = np.where(
-    monthly["Potential Revenue"]>0,
-    monthly["Profit (Potential)"] / monthly["Potential Revenue"] * 100,
-    np.nan
-)
+monthly["Total Expenses"] = monthly["Monthly Employee Cost"] + monthly["Overhead Costs"]
 
 clients = sorted(df['Client'].unique())
 colors  = dict(zip(clients, plt.cm.tab20(np.linspace(0,1,len(clients)))))
@@ -92,59 +85,73 @@ tab1, tab2 = st.tabs(["📊 Bar Chart","📈 Line Chart"])
 with tab1:
     fig, ax = plt.subplots(figsize=(22,12))
 
-    # 1) Stacked client revenue
-    stack = np.zeros(len(month_order))
+    # --- NEW: Draw ALL potential values first (hatched) ---
+    pot_stack = np.zeros(len(month_order))
     grouped = df.groupby(['Month','Client']).sum().reset_index()
     for client in clients:
         cd = (grouped[grouped["Client"]==client]
-              .set_index("Month").reindex(month_order).fillna(0))
+              .set_index("Month")
+              .reindex(month_order)
+              .fillna(0))
+        pot_vals = cd["Potential Revenue"].values
+        ax.bar(x - width/2,
+               pot_vals,
+               width,
+               bottom=pot_stack,
+               fill=False,
+               edgecolor=colors[client],
+               hatch='///',
+               linewidth=0)  # you can tweak linewidth
+        pot_stack += pot_vals
+
+    # --- Then draw ALL paid values on top (solid) ---
+    paid_stack = np.zeros(len(month_order))
+    for client in clients:
+        cd = (grouped[grouped["Client"]==client]
+              .set_index("Month")
+              .reindex(month_order)
+              .fillna(0))
         paid_vals = cd["Paid Revenue"].values
-        pot_vals  = cd["Potential Revenue"].values
-        delta     = np.maximum(0, pot_vals - paid_vals)
+        ax.bar(x - width/2,
+               paid_vals,
+               width,
+               bottom=paid_stack,
+               color=colors[client])
+        paid_stack += paid_vals
 
-        ax.bar(x-width/2, paid_vals, width, bottom=stack, color=colors[client])
-        stack += paid_vals
-        ax.bar(x-width/2, delta, width, bottom=stack,
-               color=colors[client], alpha=0.5, hatch='///')
-        stack += delta
-
-    # 2) Costs
+    # --- Expenses side bar ---
     emp_costs = monthly["Monthly Employee Cost"].values
     ovh_costs = monthly["Overhead Costs"].values
-    ax.bar(x+width/2, emp_costs, width, color="#d62728")
-    ax.bar(x+width/2, ovh_costs, width, bottom=emp_costs, color="#9467bd")
+    ax.bar(x + width/2, emp_costs, width, color="#d62728")
+    ax.bar(x + width/2, ovh_costs, width, bottom=emp_costs, color="#9467bd")
 
-    # 3) Highlight negative‐profit months
-    # (only considers potential revenue stack height)
-    for i, profit in enumerate(monthly["Profit (Potential)"] - monthly["Profit (Potential)"]):
-        # no paid profit in this view, skip
-        pass
-    for i, prof in enumerate(monthly["Profit (Potential)"] - monthly["Total Expenses"]):
-        # actually highlight if Potential < Expenses? likely not needed
-        pass
-    # Only highlight if Paid < Expenses:
-    for i, prof in enumerate(monthly["Profit (Potential)"]):
-        if (monthly["Paid Revenue"].iloc[i] - monthly["Total Expenses"].iloc[i]) < 0:
-            ax.bar(x[i]-width/2,
-                   monthly["Potential Revenue"].iloc[i],
-                   width=width, fill=False,
-                   edgecolor='red', linewidth=2)
+    # Highlight months where Paid < Expenses
+    for i in range(len(month_order)):
+        if paid_stack[i] < monthly["Total Expenses"].iloc[i]:
+            ax.bar(x[i] - width/2,
+                   pot_stack[i],
+                   width,
+                   fill=False,
+                   edgecolor='red',
+                   linewidth=2)
 
-    # 4) Formatting
+    # Formatting
     ax.set_xticks(x)
-    ax.set_xticklabels([m.split()[0][:3]+' '+m.split()[1] for m in month_order],
-                       rotation=45)
+    ax.set_xticklabels([m[:3] + ' ' + m.split()[1] for m in month_order], rotation=45)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda y,_: f"${y:,.0f}"))
     ax.set_title("Revenue (by Client) & Expenses", fontsize=18)
-    ax.set_xlabel("Month"); ax.set_ylabel("Amount ($)")
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Amount ($)")
     ax.grid(axis='y', linestyle='--', alpha=0.7)
 
-    # 5) Figure‐level legends
+    # Reserve right margin
     fig.tight_layout(rect=[0,0,0.85,1])
 
+    # Components legend
     comp_handles = [
-        Patch(facecolor="#1f77b4", label="Client Rev (Paid)"),
-        Patch(facecolor="#1f77b4", alpha=0.5, hatch="///", label="Client Rev (Potential)"),
+        Patch(facecolor='none', edgecolor=colors[clients[0]], hatch='///',
+              label="Client Rev (Potential)"),
+        Patch(facecolor=colors[clients[0]], label="Client Rev (Paid)"),
         Patch(facecolor="#d62728", label="Employee Costs"),
         Patch(facecolor="#9467bd", label="Overhead Costs")
     ]
@@ -153,6 +160,7 @@ with tab1:
                loc="upper right", bbox_to_anchor=(0.98,0.98),
                title="Components")
 
+    # Clients legend
     client_handles = [Patch(facecolor=colors[c], label=c) for c in clients]
     fig.legend(client_handles,
                [h.get_label() for h in client_handles],
