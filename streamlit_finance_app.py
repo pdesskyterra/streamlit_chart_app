@@ -36,7 +36,7 @@ def fetch_notion_data():
         # metrics
         n = len(clients)
         if n == 0: continue
-        paid = props["Paid Revenue"]["rollup"]["number"]
+        paid = props["Paid Revenue"]["rollup"]["formula"]
         emp  = props["Monthly Employee Cost"]["formula"]["number"]
         ovh  = props["Overhead Costs"]["number"]
         month = props["Month"]["select"]["name"]
