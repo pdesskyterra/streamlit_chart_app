@@ -21,61 +21,41 @@ def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
     rows = []
     resp = notion.databases.query(database_id=DATABASE_ID)
-
-    for r in resp["results"]:
-        p = r["properties"]
-
-        # 1) Clients
-        raw = p.get("Client", {}) \
-               .get("formula", {}) \
-               .get("string", "")
+    for result in resp["results"]:
+        props = result["properties"]
+        # split clients
+        raw = props["Client"]["formula"]["string"]
         clients = [c.strip() for c in raw.split(",") if c.strip()]
-        if not clients:
-            continue
-
-        # 2) Expense Category
-        cat = p.get("Expense Category", {}) \
-               .get("select", {}) \
-               .get("name", "") or ""
-        is_potential = (cat.lower() == "potential")
-
-        # 3) Calculated Revenue (or Paid rollup if you prefer)
-        calc_rev = p.get("Calculated Revenue", {}) \
-                    .get("formula", {}) \
-                    .get("number", 0) or 0
-
-        # 4) Costs
-        emp_tot = p.get("Monthly Employee Cost", {}) \
-                   .get("formula", {}) \
-                   .get("number", 0) or 0
-        ovh_tot = p.get("Overhead Costs", {}) \
-                   .get("number", 0) or 0
-
-        # 5) Month
-        month = p.get("Month", {}) \
-                 .get("select", {}) \
-                 .get("name")
-        if not month:
-            continue
-
-        # 6) Evenly split across clients
+        # split potential
+        pot_raw = []
+        for e in props["Potential Revenue (rollup)"]["rollup"]["array"]:
+            if e["type"] == "formula":
+                s = e["formula"]["string"].replace("$","").replace(",","")
+                pot_raw += [p.strip() for p in s.split(",") if p.strip()]
+        pot_vals = [float(v) if v.replace('.','',1).isdigit() else 0.0 for v in pot_raw]
+        # metrics
         n = len(clients)
-        rev_pc = calc_rev / n
-        emp_pc = emp_tot  / n
-        ovh_pc = ovh_tot  / n
-
-        for c in clients:
+        if n == 0: continue
+        paid = props["Paid Revenue"]["rollup"]["number"]
+        emp  = props["Monthly Employee Cost"]["formula"]["number"]
+        ovh  = props["Overhead Costs"]["number"]
+        month = props["Month"]["select"]["name"]
+        # pair or average
+        if len(pot_vals) == n:
+            pairs = zip(clients, pot_vals)
+        else:
+            avg = sum(pot_vals)/n if pot_vals else 0
+            pairs = [(c, avg) for c in clients]
+        for client, pot in pairs:
             rows.append({
                 "Month": month,
-                "Client": c,
-                "Paid Revenue":      0.0      if is_potential else rev_pc,
-                "Potential Revenue": rev_pc   if is_potential else 0.0,
-                "Monthly Employee Cost": emp_pc,
-                "Overhead Costs":        ovh_pc
+                "Client": client,
+                "Paid Revenue": paid/n,
+                "Potential Revenue": pot,
+                "Monthly Employee Cost": emp/n,
+                "Overhead Costs": ovh/n
             })
-
     return pd.DataFrame(rows)
-
 
 df = fetch_notion_data()
 if df.empty:
