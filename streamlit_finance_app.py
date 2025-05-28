@@ -37,7 +37,6 @@ def fetch_notion_data():
 
         # Expense Category (Paid vs Potential)
         cat = p.get("Expense Category",{})\
-               .get("rollup",{})\
                .get("select",[])\
                .get("name", "")  
         # flatten select/formula in rollup
