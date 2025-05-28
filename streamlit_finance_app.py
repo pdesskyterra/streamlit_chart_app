@@ -28,7 +28,7 @@ def fetch_notion_data():
         clients = [c.strip() for c in raw.split(",") if c.strip()]
         # split potential
         pot_raw = []
-        for e in props["Potential Revenue (rollup)"]["rollup"]["formula"]:
+        for e in props["Potential Revenue (rollup)"]["rollup"]["number"]:
             if e["type"] == "formula":
                 s = e["formula"]["string"].replace("$","").replace(",","")
                 pot_raw += [p.strip() for p in s.split(",") if p.strip()]
