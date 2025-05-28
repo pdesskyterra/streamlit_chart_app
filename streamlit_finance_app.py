@@ -25,47 +25,42 @@ def fetch_notion_data():
     for r in resp["results"]:
         p = r["properties"]
 
-        # 1) Client list
-        raw = p.get("Client",{}).get("formula",{}).get("string","")
+        # 1) Clients
+        raw = p.get("Client", {}).get("formula", {}).get("string", "")
         clients = [c.strip() for c in raw.split(",") if c.strip()]
-
-        # 2) Expense Category rollup → ['Paid','Potential',…]
-        exp_entries = p.get("Expense Category",{}).get("rollup",{}).get("array",[])
-        cats = []
-        for e in exp_entries:
-            if e.get("type") == "select":
-                cats.append(e["select"]["name"])
-            elif t := e.get("text"):
-                cats.append(t.get("content",""))
-        is_potential = any(c.lower()=="potential" for c in cats)
-
-        # 3) Calculated Revenue (formula)
-        calc_rev = p.get("Calculated Revenue",{}).get("formula",{}).get("number",0)
-
-        # 4) Costs
-        emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0)
-        ovh_tot = p.get("Overhead Costs",{}).get("number",0)
-
-        # 5) Month
-        month = p.get("Month",{}).get("select",{}).get("name")
-        if not month or not clients:
+        if not clients:
             continue
 
-        # 6) Distribute
-        n = len(clients)
-        rev_pc = calc_rev/n
-        emp_pc = emp_tot/n
-        ovh_pc = ovh_tot/n
+        # 2) Expense Category (now a select, not a rollup)
+        cat = p.get("Expense Category", {}).get("select", {}).get("name", "")
+        is_potential = (cat.lower() == "potential")
 
-        for c in clients:
+        # 3) Calculated Revenue (your new formula field)
+        calc_rev = p.get("Calculated Revenue", {}).get("formula", {}).get("number", 0) or 0
+
+        # 4) Costs
+        emp_tot = p.get("Monthly Employee Cost", {}).get("formula", {}).get("number", 0) or 0
+        ovh_tot = p.get("Overhead Costs", {}).get("number", 0) or 0
+
+        # 5) Month
+        month = p.get("Month", {}).get("select", {}).get("name")
+        if not month:
+            continue
+
+        # 6) Distribute evenly across clients
+        n = len(clients)
+        rev_pc = calc_rev / n
+        emp_pc = emp_tot  / n
+        ovh_pc = ovh_tot  / n
+
+        for client in clients:
             rows.append({
                 "Month": month,
-                # assign either to Paid or to Potential
-                "Paid Revenue": 0 if is_potential else rev_pc,
-                "Potential Revenue": rev_pc if is_potential else 0,
+                "Paid Revenue":      0.0      if is_potential else rev_pc,
+                "Potential Revenue": rev_pc   if is_potential else 0.0,
                 "Monthly Employee Cost": emp_pc,
-                "Overhead Costs": ovh_pc,
-                "Client": c
+                "Overhead Costs":        ovh_pc,
+                "Client": client
             })
 
     return pd.DataFrame(rows)
