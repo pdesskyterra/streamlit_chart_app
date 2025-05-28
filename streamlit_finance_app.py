@@ -25,39 +25,49 @@ def fetch_notion_data():
     for r in resp["results"]:
         p = r["properties"]
 
-        # 1) Clients
-        raw = p.get("Client", {}).get("formula", {}).get("string", "")
+        # Clients
+        raw = p.get("Client", {})\
+               .get("formula", {})\
+               .get("string", "")
         clients = [c.strip() for c in raw.split(",") if c.strip()]
         if not clients:
             continue
 
-        # 2) Expense Category (select)
-        cat = p.get("Expense Category", {}).get("select", {}).get("name", "")
+        # Expense Category (select)
+        cat = p.get("Expense Category", {})\
+               .get("select", {})\
+               .get("name", "") or ""
         is_potential = (cat.lower() == "potential")
 
-        # 3) Calculated Revenue (your new formula field)
-        calc_rev = p.get("Calculated Revenue", {}).get("formula", {}).get("number", 0) or 0
+        # Calculated Revenue
+        calc_rev = p.get("Calculated Revenue", {})\
+                    .get("formula", {})\
+                    .get("number", 0) or 0
 
-        # 4) Costs
-        emp_tot = p.get("Monthly Employee Cost", {}).get("formula", {}).get("number", 0) or 0
-        ovh_tot = p.get("Overhead Costs", {}).get("number", 0) or 0
+        # Costs
+        emp_tot = p.get("Monthly Employee Cost", {})\
+                   .get("formula", {})\
+                   .get("number", 0) or 0
+        ovh_tot = p.get("Overhead Costs", {})\
+                   .get("number", 0) or 0
 
-        # 5) Month
-        month = p.get("Month", {}).get("select", {}).get("name")
+        # Month (now safe)
+        month = p.get("Month", {})\
+                 .get("select", {})\
+                 .get("name")
         if not month:
             continue
 
-        # 6) Distribute evenly across clients
+        # Evenly split across clients
         n = len(clients)
         rev_pc = calc_rev / n
-        emp_pc = emp_tot   / n
-        ovh_pc = ovh_tot   / n
+        emp_pc = emp_tot  / n
+        ovh_pc = ovh_tot  / n
 
         for c in clients:
             rows.append({
                 "Month": month,
                 "Client": c,
-                # assign revenue based on category
                 "Paid Revenue":      0.0      if is_potential else rev_pc,
                 "Potential Revenue": rev_pc   if is_potential else 0.0,
                 "Monthly Employee Cost": emp_pc,
@@ -65,6 +75,7 @@ def fetch_notion_data():
             })
 
     return pd.DataFrame(rows)
+
 
 
 df = fetch_notion_data()
