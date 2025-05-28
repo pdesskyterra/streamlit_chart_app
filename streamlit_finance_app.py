@@ -115,7 +115,6 @@ def fetch_notion_data():
     return pd.DataFrame(rows)
 
 
-
 df = fetch_notion_data()
 if df.empty:
     st.warning("No data found or invalid Notion credentials.")
