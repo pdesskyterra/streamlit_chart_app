@@ -28,7 +28,7 @@ def fetch_notion_data():
         clients = [c.strip() for c in raw.split(",") if c.strip()]
         # split potential
         pot_raw = []
-        for e in props["Potential Revenue (rollup)"]["rollup"]["array"]:
+        for e in props["Potential Revenue (rollup)"]["rollup"]["formula"]:
             if e["type"] == "formula":
                 s = e["formula"]["string"].replace("$","").replace(",","")
                 pot_raw += [p.strip() for p in s.split(",") if p.strip()]
@@ -36,7 +36,7 @@ def fetch_notion_data():
         # metrics
         n = len(clients)
         if n == 0: continue
-        paid = props["Paid Revenue"]["rollup"]["formula"]
+        paid = props["Paid Revenue"]["rollup"]["number"]
         emp  = props["Monthly Employee Cost"]["formula"]["number"]
         ovh  = props["Overhead Costs"]["number"]
         month = props["Month"]["select"]["name"]
