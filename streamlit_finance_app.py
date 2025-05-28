@@ -33,7 +33,7 @@ def fetch_notion_data():
         if not month:
             continue
 
-        # 2) Clients list
+        # 2) Client list
         client_raw = (
             p
             .get("Client", {})
@@ -45,23 +45,23 @@ def fetch_notion_data():
             continue
         n = len(clients)
 
-        # 3) Expense Category rollup → list of selects
+        # 3) Expense Category rollup (array of selects)
         exp_rollup = (
             p
             .get("Expense Category", {})
             .get("rollup", {})
             .get("array", [])
         )
-        cats = [
-            e.get("select", {}).get("name", "")
-            for e in exp_rollup
-            if e.get("type") == "select"
-        ]
+        cats = []
+        for e in exp_rollup:
+            if e.get("type") == "select":
+                name = e.get("select", {}).get("name", "")
+                cats.append(name)
+        # if rollup length doesn’t match clients, assume all Paid
         if len(cats) != n:
-            # fallback: assume all Paid
             cats = ["Paid"] * n
 
-        # 4) Calculated Revenue (formula field)
+        # 4) Calculated Revenue (your formula field)
         calc_rev = (
             p
             .get("Calculated Revenue", {})
@@ -94,25 +94,26 @@ def fetch_notion_data():
             or 0
         )
 
-        # split shares
+        # 7) Split evenly
         paid_share = paid_total / n
         pot_share  = max(0, calc_rev - paid_total) / n
         emp_share  = emp_tot   / n
         ovh_share  = ovh_tot   / n
 
-        # 7) build rows
+        # 8) Build one row per client
         for idx, client in enumerate(clients):
-            cat = cats[idx].lower()
+            cat_lower = cats[idx].lower()
             rows.append({
                 "Month": month,
                 "Client": client,
-                "Paid Revenue":      paid_share  if cat == "paid"      else 0.0,
-                "Potential Revenue": pot_share   if cat == "potential" else 0.0,
+                "Paid Revenue":      paid_share  if cat_lower == "paid"      else 0.0,
+                "Potential Revenue": pot_share   if cat_lower == "potential" else 0.0,
                 "Monthly Employee Cost": emp_share,
                 "Overhead Costs":        ovh_share
             })
 
     return pd.DataFrame(rows)
+
 
 
 df = fetch_notion_data()
