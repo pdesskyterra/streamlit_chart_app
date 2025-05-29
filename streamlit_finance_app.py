@@ -12,53 +12,57 @@ DATABASE_ID  = st.secrets["DATABASE_ID"]
 
 # --- PAGE SETUP ---
 st.set_page_config(layout="wide")
-st.title("📊 Profit & Expense Tracker (Potential Revenue Basis)")
+st.title("📊 Profit & Expense Tracker by Category")
 
-# --- FETCH & EXPAND NOTION DATA ---
+# --- FETCH & FLATTEN NOTION DATA ---
 @st.cache_data(ttl=600)
 def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
     rows = []
     resp = notion.databases.query(database_id=DATABASE_ID)
 
-    for result in resp.get("results", []):
-        props = result.get("properties", {})
+    for page in resp.get("results", []):
+        props = page.get("properties", {})
         month = props.get("Month", {}).get("select", {}).get("name")
         if not month:
             continue
-        raw = props.get("Client", {}).get("formula", {}).get("string", "")
-        clients = [c.strip() for c in raw.split(",") if c.strip()]
-        if not clients:
+        # clients list
+        raw_clients = props.get("Client", {}).get("formula", {}).get("string", "")
+        clients = [c.strip() for c in raw_clients.split(",") if c.strip()]
+        n = len(clients)
+        if n == 0:
             continue
-        # parse potential revenue rollup per client
+        # potential revenue per client
         pot_vals = []
         for e in props.get("Potential Revenue (rollup)", {}).get("rollup", {}).get("array", []):
             if e.get("type") == "formula":
-                s = e.get("formula", {}).get("string", "").replace("$", "").replace(",", "")
+                s = e.get("formula", {}).get("string", "").replace("$","").replace(",","")
                 pot_vals += [float(v) for v in s.split(",") if v and v.replace('.', '', 1).isdigit()]
-        n = len(clients)
-        if not pot_vals:
-            continue
-        # if lengths match, use direct; else average
-        if len(pot_vals) == n:
-            client_vals = pot_vals
-        else:
-            avg = sum(pot_vals) / len(pot_vals)
-            client_vals = [avg] * n
+        if len(pot_vals) != n:
+            avg = sum(pot_vals)/len(pot_vals) if pot_vals else 0
+            pot_vals = [avg]*n
         # expenses per client
         emp_tot = props.get("Monthly Employee Cost", {}).get("formula", {}).get("number", 0) or 0
         ovh_tot = props.get("Overhead Costs", {}).get("number", 0) or 0
         emp_share = emp_tot / n
         ovh_share = ovh_tot / n
-        # build rows
-        for client, pot in zip(clients, client_vals):
-            rows.append({
-                "Month": month,
-                "Client": client,
-                "Potential Revenue": pot,
-                "Monthly Employee Cost": emp_share,
-                "Overhead Costs": ovh_share
-            })
+        # expense category rollup tags if present
+        exp_roll = props.get("Expense Category", {}).get("rollup", {}).get("array", [])
+        cats = []
+        for e in exp_roll:
+            if e.get("type") == "select":
+                cats.append(e.get("select", {}).get("name", ""))
+        if len(cats) != n:
+            cats = ["Potential"] * n
+        # build rows for each client-category
+        for idx, client in enumerate(clients):
+            cat = cats[idx]
+            pot = pot_vals[idx]
+            # revenue category: Paid, Invoiced, Committed, Proposal, Potential
+            rows.append({"Month": month, "Category": cat, "Client": client, "Amount": pot})
+            # cost categories
+            rows.append({"Month": month, "Category": "Employee Cost", "Client": client, "Amount": emp_share})
+            rows.append({"Month": month, "Category": "Overhead Cost", "Client": client, "Amount": ovh_share})
     return pd.DataFrame(rows)
 
 # load data
@@ -67,95 +71,71 @@ if df.empty:
     st.warning("No data found or invalid Notion credentials.")
     st.stop()
 
-# --- PROCESSING ---
-month_order = ['February 2025','March 2025','April 2025','May 2025','June 2025','July 2025','August 2025']
-df['Month'] = pd.Categorical(df['Month'], categories=month_order, ordered=True)
-df = df[df['Month'].notna()].sort_values(['Month','Client'])
+# filter months
+months = ['February 2025','March 2025','April 2025','May 2025','June 2025','July 2025','August 2025']
+df['Month'] = pd.Categorical(df['Month'], categories=months, ordered=True)
+df = df[df['Month'].notna()]
 
-# aggregate monthly sums
-df_month = df.groupby('Month').sum().reindex(month_order, fill_value=0)
-df_month['Total Expenses'] = df_month['Monthly Employee Cost'] + df_month['Overhead Costs']
-df_month['Potential Profit'] = df_month['Potential Revenue'] - df_month['Total Expenses']
-df_month['Profit Margin (%)'] = np.where(
-    df_month['Potential Revenue'] > 0,
-    df_month['Potential Profit'] / df_month['Potential Revenue'] * 100,
-    np.nan
-)
+# pivot for bars
+bar_df = df.pivot_table(index='Month', columns='Category', values='Amount', aggfunc='sum').fillna(0)
 
-# chart prep
-clients = sorted(df['Client'].unique())
-colors = dict(zip(clients, plt.cm.tab20(np.linspace(0,1,len(clients)))))
-x = np.arange(len(month_order))
-width = 0.35
+# compute profit and margin
+rev_cols = [c for c in bar_df.columns if c not in ['Employee Cost','Overhead Cost']]
+bar_df['Total Revenue'] = bar_df[rev_cols].sum(axis=1)
+bar_df['Total Expenses'] = bar_df['Employee Cost'] + bar_df['Overhead Cost']
+bar_df['Profit'] = bar_df['Total Revenue'] - bar_df['Total Expenses']
+bar_df['Margin (%)'] = np.where(bar_df['Total Revenue']>0, bar_df['Profit']/bar_df['Total Revenue']*100, np.nan)
 
-tab1, tab2 = st.tabs(["📊 Stacked Bar","📈 Line Chart"])
+# tabs
+tab1, tab2 = st.tabs(["📊 Stacked Bars","📈 Line Chart"])
 
-# Stacked Bar: potential revenue by client & expenses
 with tab1:
-    fig, ax = plt.subplots(figsize=(16,8))
-    stack = np.zeros(len(month_order))
-    grp = df.groupby(['Month','Client']).sum().reset_index()
-    # plot client stacks
-    for client in clients:
-        cd = grp[grp['Client']==client].set_index('Month').reindex(month_order, fill_value=0)
-        vals = cd['Potential Revenue'].values
-        ax.bar(x-width/2, vals, width, bottom=stack, color=colors[client])
+    fig, ax = plt.subplots(figsize=(18,8))
+    x = np.arange(len(months))
+    width = 0.4
+    # revenue stacks
+    stack = np.zeros(len(months))
+    for cat in rev_cols:
+        vals = bar_df[cat].values
+        ax.bar(x-width/2, vals, width, bottom=stack, label=cat)
         stack += vals
-    # plot expenses
-    ax.bar(x+width/2, df_month['Monthly Employee Cost'], width, color='#d62728')
-    ax.bar(x+width/2, df_month['Overhead Costs'], width,
-           bottom=df_month['Monthly Employee Cost'], color='#9467bd')
-    # highlight negative-profit months
-    for i, prof in enumerate(df_month['Potential Profit']):
-        if prof < 0:
-            ax.bar(x[i]-width/2, df_month['Potential Revenue'].iloc[i],
-                   width, fill=False, edgecolor='red', linewidth=2)
-    # axes formatting
+    # expense stacks
+    stack2 = np.zeros(len(months))
+    for cat in ['Employee Cost','Overhead Cost']:
+        vals = bar_df[cat].values
+        ax.bar(x+width/2, vals, width, bottom=stack2, label=cat)
+        stack2 += vals
+    # formatting
     ax.set_xticks(x)
-    ax.set_xticklabels([m[:3]+' '+m.split()[1] for m in month_order], rotation=45)
+    ax.set_xticklabels([m[:3]+' '+m.split()[1] for m in months], rotation=45)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda y,_: f"${y:,.0f}"))
-    ax.set_title('Potential Revenue by Client & Expenses', fontsize=14)
+    ax.set_title('Revenue & Expenses by Category')
     ax.set_xlabel('Month'); ax.set_ylabel('Amount ($)')
-    # legends: clients and expenses
-    fig.tight_layout(rect=[0,0,0.75,1])
-    client_handles = [Patch(facecolor=colors[c], label=c) for c in clients]
-    comp_handles = [
-        Patch(facecolor='#d62728', label='Employee Cost'),
-        Patch(facecolor='#9467bd', label='Overhead Cost')
-    ]
-    leg1 = ax.legend(handles=client_handles, title='Clients', loc='upper left', bbox_to_anchor=(1.02, 1.0))
-    ax.add_artist(leg1)
-    ax.legend(handles=comp_handles, title='Expenses', loc='upper left', bbox_to_anchor=(1.02, 0.6))
+    ax.legend(loc='upper left', bbox_to_anchor=(1,1))
     st.pyplot(fig)
 
-# Line Chart: potential revenue, profit, margin
 with tab2:
-    fig2, ax2 = plt.subplots(figsize=(16,8))
+    fig2, ax2 = plt.subplots(figsize=(18,8))
+    x = np.arange(len(months))
     # plot lines
-    l1, = ax2.plot(x, df_month['Potential Revenue'], 'b-', lw=3, marker='s', label='Potential Revenue')
-    l2, = ax2.plot(x, df_month['Potential Profit'],  'c--', lw=2.5, marker='v', label='Potential Profit')
+    l1, = ax2.plot(x, bar_df['Total Revenue'],     '-o', label='Total Revenue')
+    l2, = ax2.plot(x, bar_df['Profit'],            '-s', label='Profit')
     ax3 = ax2.twinx()
-    l3, = ax3.plot(x, df_month['Profit Margin (%)'], 'm-.', lw=2, marker='d', label='Profit Margin (%)')
-    ax3.set_ylabel('Profit Margin (%)')
-    ax3.yaxis.set_major_formatter(FuncFormatter(lambda p,_: f"{p:.0f}%"))
-    # annotate numbers with non-overlapping offsets
+    l3, = ax3.plot(x, bar_df['Margin (%)'], '-d', label='Margin (%)')
+    ax3.set_ylabel('Margin (%)'); ax3.yaxis.set_major_formatter(FuncFormatter(lambda p,_: f"{p:.0f}%"))
+    # annotate
     for i in range(len(x)):
-        rev = df_month['Potential Revenue'].iloc[i]
-        prof = df_month['Potential Profit'].iloc[i]
-        pm = df_month['Profit Margin (%)'].iloc[i]
-        ax2.annotate(f"${rev:,.0f}", (x[i], rev), textcoords='offset points', xytext=(0,10), ha='center')
-        ax2.annotate(f"${prof:,.0f}", (x[i], prof), textcoords='offset points', xytext=(0,-10), ha='center')
-        if not np.isnan(pm):
-            ax3.annotate(f"{pm:.0f}%", (x[i], pm), textcoords='offset points', xytext=(0,15), ha='center')
+        ax2.annotate(f"${bar_df['Total Revenue'].iloc[i]:,.0f}",(x[i],bar_df['Total Revenue'].iloc[i]),
+                     textcoords='offset points', xytext=(0,10), ha='center')
+        ax2.annotate(f"${bar_df['Profit'].iloc[i]:,.0f}",(x[i],bar_df['Profit'].iloc[i]),
+                     textcoords='offset points', xytext=(0,-10), ha='center')
+        m = bar_df['Margin (%)'].iloc[i]
+        if not np.isnan(m): ax3.annotate(f"{m:.0f}%",(x[i],m),textcoords='offset points',xytext=(0,10),ha='center')
     # formatting
     ax2.set_xticks(x)
-    ax2.set_xticklabels([m[:3]+' '+m.split()[1] for m in month_order], rotation=45)
+    ax2.set_xticklabels([m[:3]+' '+m.split()[1] for m in months], rotation=45)
     ax2.yaxis.set_major_formatter(FuncFormatter(lambda y,_: f"${y:,.0f}"))
-    ax2.set_title('Potential Revenue & Profit Over Time', fontsize=14)
+    ax2.set_title('Overall Revenue, Profit & Margin Over Time')
     ax2.set_xlabel('Month'); ax2.set_ylabel('Amount ($)')
-    # combined legend
-    handles = [l1, l2, l3]
-    labels = [h.get_label() for h in handles]
-    fig2.tight_layout(rect=[0,0,0.75,1])
-    fig2.legend(handles, labels, loc='upper right')
+    fig2.legend(handles=[l1,l2,l3], loc='upper right')
     st.pyplot(fig2)
