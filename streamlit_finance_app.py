@@ -95,40 +95,66 @@ with tab1:
     fig, ax = plt.subplots(figsize=(16,8))
     stack = np.zeros(len(month_order))
     grp = df.groupby(['Month','Client']).sum().reset_index()
+    # plot client stacks
     for client in clients:
         cd = grp[grp['Client']==client].set_index('Month').reindex(month_order, fill_value=0)
         vals = cd['Potential Revenue'].values
-        ax.bar(x-width/2, vals, width, bottom=stack, color=colors[client], label=client)
+        ax.bar(x-width/2, vals, width, bottom=stack, color=colors[client])
         stack += vals
-    # expenses
-    ax.bar(x+width/2, df_month['Monthly Employee Cost'], width, color='#d62728', label='Employee Cost')
-    ax.bar(x+width/2, df_month['Overhead Costs'], width, bottom=df_month['Monthly Employee Cost'], color='#9467bd', label='Overhead Cost')
-    # highlight months with negative profit
+    # plot expenses
+    ax.bar(x+width/2, df_month['Monthly Employee Cost'], width, color='#d62728')
+    ax.bar(x+width/2, df_month['Overhead Costs'], width, bottom=df_month['Monthly Employee Cost'], color='#9467bd')
+    # highlight negative-profit months
     for i, prof in enumerate(df_month['Potential Profit']):
         if prof < 0:
             ax.bar(x[i]-width/2, df_month['Potential Revenue'].iloc[i], width, fill=False, edgecolor='red', linewidth=2)
+    # axes formatting
     ax.set_xticks(x)
     ax.set_xticklabels([m[:3]+' '+m.split()[1] for m in month_order], rotation=45)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda y,_: f"${y:,.0f}"))
     ax.set_title('Potential Revenue by Client & Expenses', fontsize=14)
     ax.set_xlabel('Month'); ax.set_ylabel('Amount ($)')
-    ax.legend(loc='upper left', bbox_to_anchor=(1,1))
+    # legends
+    fig.tight_layout(rect=[0,0,0.85,1])
+    client_handles = [Patch(facecolor=colors[c], label=c) for c in clients]
+    comp_handles = [
+        Patch(facecolor='#d62728', label='Employee Cost'),
+        Patch(facecolor='#9467bd', label='Overhead Cost')
+    ]
+    # place legends separately
+    ax.legend(handles=client_handles, title='Clients', loc='upper left', bbox_to_anchor=(1.0, 1.0))
+    ax.legend(handles=comp_handles, title='Expenses', loc='upper left', bbox_to_anchor=(1.0, 0.6))
     st.pyplot(fig)
 
 # Line Chart: potential revenue, profit, margin
 with tab2:
     fig2, ax2 = plt.subplots(figsize=(16,8))
+    # plot lines
     l1, = ax2.plot(x, df_month['Potential Revenue'], 'b-', lw=3, marker='s', label='Potential Revenue')
     l2, = ax2.plot(x, df_month['Potential Profit'],  'c--', lw=2.5, marker='v', label='Potential Profit')
     ax3 = ax2.twinx()
     l3, = ax3.plot(x, df_month['Profit Margin (%)'], 'm-.', lw=2, marker='d', label='Profit Margin (%)')
-    ax3.set_ylabel('Profit Margin (%)')
-    ax3.yaxis.set_major_formatter(FuncFormatter(lambda p,_: f"{p:.0f}%"))
+    # annotate numbers
+    for i in range(len(x)):
+        ax2.annotate(f"${df_month['Potential Revenue'].iloc[i]:,.0f}",
+                     (x[i], df_month['Potential Revenue'].iloc[i]),
+                     textcoords='offset points', xytext=(0,10), ha='center')
+        ax2.annotate(f"${df_month['Potential Profit'].iloc[i]:,.0f}",
+                     (x[i], df_month['Potential Profit'].iloc[i]),
+                     textcoords='offset points', xytext=(0,-15), ha='center')
+        pm = df_month['Profit Margin (%)'].iloc[i]
+        if not np.isnan(pm):
+            ax3.annotate(f"{pm:.0f}%",
+                         (x[i], pm), textcoords='offset points', xytext=(0,10), ha='center')
+    # formatting
     ax2.set_xticks(x)
     ax2.set_xticklabels([m[:3]+' '+m.split()[1] for m in month_order], rotation=45)
     ax2.yaxis.set_major_formatter(FuncFormatter(lambda y,_: f"${y:,.0f}"))
     ax2.set_title('Potential Revenue & Profit Over Time', fontsize=14)
     ax2.set_xlabel('Month'); ax2.set_ylabel('Amount ($)')
+    ax3.set_ylabel('Profit Margin (%)')
+    ax3.yaxis.set_major_formatter(FuncFormatter(lambda p,_: f"{p:.0f}%"))
+    # combined legend
     handles = [l1, l2, l3]
     labels = [h.get_label() for h in handles]
     fig2.legend(handles, labels, loc='upper right')
