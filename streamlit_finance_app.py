@@ -18,67 +18,60 @@ st.title("📊 Profit & Expense Tracker (Expense-Category Basis)")
 @st.cache_data(ttl=600)
 def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
-    rows   = []
-    resp   = notion.databases.query(database_id=DATABASE_ID)
-    for page in resp["results"]:
-        p     = page["properties"]
-        month = p["Month"]["select"]["name"] if p["Month"]["select"] else None
+    rows = []
+    for page in notion.databases.query(database_id=DATABASE_ID)["results"]:
+        p = page["properties"]
+        month = p.get("Month",{}).get("select",{}).get("name")
         if not month:
             continue
 
-        # 1) Clients
-        raw_clients = p["Client"]["formula"]["string"]
+        # 1) Clients list
+        raw_clients = p.get("Client",{}).get("formula",{}).get("string","")
         clients     = [c.strip() for c in raw_clients.split(",") if c.strip()]
         n = len(clients)
         if n == 0:
             continue
 
-        # 2) Expense Categories
-        tags = [
-            e["select"]["name"]
-            for e in p["Expense Category"]["rollup"]["array"]
-            if e["type"]=="select"
-        ]
+        # 2) Expense Category tags
+        raw_tags = p.get("Expense Category",{}).get("rollup",{}).get("array",[])
+        tags = [e.get("select",{}).get("name","") for e in raw_tags if e.get("type")=="select"]
         if len(tags) != n:
-            tags = ["Paid"] * n
+            tags = ["Paid"]*n
 
-        # 3) Paid Revenue per client
-        paid_vals = []
-        for e in p["Paid Revenue"]["rollup"]["array"]:
-            if e["type"]=="number":
-                paid_vals.append(e["number"] or 0)
-        if len(paid_vals) != n:
-            total_paid = p["Paid Revenue"]["rollup"]["number"] or 0
-            paid_vals = [total_paid/n] * n
+        # 3) Paid Revenue total → per-client share
+        paid_total = p.get("Paid Revenue",{}).get("rollup",{}).get("number",0) or 0
+        paid_share = paid_total / n
 
-        # 4) Potential Revenue per client
+        # 4) Potential Revenue roll-up per client
         pot_vals = []
-        for e in p["Potential Revenue (rollup)"]["rollup"]["array"]:
-            if e["type"]=="formula":
+        for e in p.get("Potential Revenue (rollup)",{}).get("rollup",{}).get("array",[]):
+            if e.get("type")=="formula":
                 s = e["formula"]["string"].replace("$","").replace(",","")
-                if s and s.replace(".", "",1).isdigit():
-                    pot_vals += [float(v) for v in s.split(",") if v.strip()]
+                pot_vals += [float(v) for v in s.split(",") if v and v.replace(".", "",1).isdigit()]
         if len(pot_vals) != n:
-            total_pot = sum(pot_vals)
-            avg = total_pot/n if n else 0
+            avg = (sum(pot_vals)/len(pot_vals)) if pot_vals else 0.0
             pot_vals = [avg]*n
 
         # 5) Costs per client
-        emp_tot = p["Monthly Employee Cost"]["formula"]["number"] or 0
-        ovh_tot = p["Overhead Costs"]["number"] or 0
+        emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
+        ovh_tot = p.get("Overhead Costs",{}).get("number",0) or 0
         emp_share = emp_tot / n
         ovh_share = ovh_tot / n
 
-        # 6) Build rows
-        for i, client in enumerate(clients):
+        # 6) Emit one row / client
+        for i,client in enumerate(clients):
+            tag = tags[i]
+            pot = pot_vals[i]
             rows.append({
-                "Month":          month,
-                "Client":         client,
-                "Tag":            tags[i],
-                "Paid":           paid_vals[i],
-                "Potential":      pot_vals[i],
-                "Employee Cost":  emp_share,
-                "Overhead Cost":  ovh_share
+                "Month":         month,
+                "Client":        client,
+                "Tag":           tag,
+                "Paid":          paid_share     if tag=="Paid" else 0.0,
+                "Invoiced":      pot            if tag=="Invoiced"  else 0.0,
+                "Committed":     pot            if tag=="Committed" else 0.0,
+                "Proposal":      pot            if tag=="Proposal"  else 0.0,
+                "Employee Cost": emp_share,
+                "Overhead Cost": ovh_share
             })
 
     return pd.DataFrame(rows)
