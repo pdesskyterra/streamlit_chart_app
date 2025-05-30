@@ -17,13 +17,14 @@ st.title("📊 Profit & Expense Tracker (Expense-Category Basis)")
 def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
     rows = []
+
     for page in notion.databases.query(database_id=DATABASE_ID)["results"]:
         p     = page["properties"]
         month = p.get("Month",{}).get("select",{}).get("name")
         if not month:
             continue
 
-        # 1) Clients
+        # 1) Clients list
         raw_clients = p.get("Client",{}).get("formula",{}).get("string","")
         clients     = [c.strip() for c in raw_clients.split(",") if c.strip()]
         n = len(clients)
@@ -34,17 +35,26 @@ def fetch_notion_data():
         raw_tags = p.get("Expense Category",{}).get("rollup",{}).get("array",[])
         tags = [e.get("select",{}).get("name","") for e in raw_tags if e.get("type")=="select"]
         if len(tags) != n:
-            tags = ["Paid"]*n
+            tags = ["Paid"]*n  # fallback
 
-        # 3) Paid revenue total → per-client
+        # 3) Paid total → per-client share
         paid_total = p.get("Paid Revenue",{}).get("rollup",{}).get("number",0) or 0
         paid_share = paid_total / n
 
-        # 4) Potential revenue per client
-        calc_rev   = p.get("Calculated Revenue",{}).get("formula",{}).get("number",0) or 0
-        raw_pot    = calc_rev - paid_total
-        pot_share  = max(0, raw_pot) / n
-
+        # 4) RAW Potential roll-up per client
+        pot_vals = []
+        for e in p.get("Potential Revenue (rollup)",{}).get("rollup",{}).get("array",[]):
+            if e.get("type")=="formula":
+                s = e["formula"]["string"].replace("$","").replace(",","")
+                for piece in s.split(","):
+                    piece = piece.strip()
+                    if piece and piece.replace(".", "",1).isdigit():
+                        pot_vals.append(float(piece))
+        if len(pot_vals) != n:
+            # if DB has fewer/more entries than clients, fall back to equal split
+            total_pot = sum(pot_vals)
+            avg       = total_pot/n if n else 0.0
+            pot_vals  = [avg]*n
 
         # 5) Cost shares
         emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
@@ -52,7 +62,7 @@ def fetch_notion_data():
         emp_share = emp_tot / n
         ovh_share = ovh_tot / n
 
-        # 6) Emit one row per client
+        # 6) build one row / client
         for i, client in enumerate(clients):
             tag = tags[i]
             pot = pot_vals[i]
@@ -60,10 +70,10 @@ def fetch_notion_data():
                 "Month":         month,
                 "Client":        client,
                 "Tag":           tag,
-                "Paid":          paid_share      if tag=="Paid"      else 0.0,
-                "Invoiced":      pot             if tag=="Invoiced"  else 0.0,
-                "Committed":     pot             if tag=="Committed" else 0.0,
-                "Proposal":      pot             if tag=="Proposal"  else 0.0,
+                "Paid":          paid_share     if tag=="Paid"      else 0.0,
+                "Invoiced":      pot            if tag=="Invoiced"  else 0.0,
+                "Committed":     pot            if tag=="Committed" else 0.0,
+                "Proposal":      pot            if tag=="Proposal"  else 0.0,
                 "Employee Cost": emp_share,
                 "Overhead Cost": ovh_share
             })
@@ -92,19 +102,21 @@ df_mc = (
       .reset_index()
 )
 
+# For drawing hats
 tag_map = (
     df[['Month','Client','Tag']]
       .drop_duplicates()
       .set_index(['Month','Client'])['Tag']
 )
 
+# Month totals for line chart
 monthly = df_mc.groupby('Month').sum().reindex(months, fill_value=0)
 revenue   = monthly[["Paid","Invoiced","Committed","Proposal"]].sum(axis=1)
 costs     = monthly["Employee Cost"] + monthly["Overhead Cost"]
 profit    = revenue - costs
 margin    = np.where(revenue>0, profit/revenue*100, np.nan)
 
-# plotting params
+# plotting setup
 clients    = df_mc['Client'].unique().tolist()
 colors     = dict(zip(clients, plt.cm.tab20(np.linspace(0,1,len(clients)))))
 categories = ["Paid","Invoiced","Committed","Proposal"]
@@ -119,10 +131,10 @@ with tab1:
     fig, ax = plt.subplots(figsize=(14,7))
     base = np.zeros(len(months))
 
-    # (7) alternating month shading
+    # 7) alternate-month shading
     for i in range(len(months)):
-        if i % 2 == 0:
-            ax.axvspan(i-w, i+w, color='grey', alpha=0.1, zorder=0)
+        if i%2==0:
+            ax.axvspan(i-w, i+w, color="grey", alpha=0.1, zorder=0)
 
     # 1) revenue stacks
     for client in clients:
@@ -132,8 +144,7 @@ with tab1:
             ax.bar(x-w/2, vals, w, bottom=base,
                    color=colors[client],
                    hatch=hatches[cat],
-                   edgecolor='black' if cat!="Paid" else 'none',
-                   label=None)
+                   edgecolor='black' if cat!="Paid" else 'none')
             base += vals
 
     # 2) cost stacks
@@ -142,40 +153,39 @@ with tab1:
     cbase += monthly["Employee Cost"]
     ax.bar(x+w/2, monthly["Overhead Cost"], w, bottom=cbase, color="#9467bd", label="Overhead Cost")
 
-    # grid lines (6)
+    # 6) gridlines
     ax.grid(axis='y', linestyle='--', alpha=0.7, zorder=-1)
 
-    # 3) zero-line highlight
+    # 3) highlight negatives
     for i in range(len(months)):
         if profit.iloc[i] < 0:
             ax.bar(x[i], revenue.iloc[i], w*2,
                    fill=False, edgecolor='red', linewidth=2)
 
-    # (7) month labels
+    # 7) month labels
     ax.set_xticks(x)
     ax.set_xticklabels([m[:3]+" "+m.split()[1] for m in months], rotation=45)
     ax.set_ylabel("Amount ($)")
     ax.set_title("Revenue (by Client & Expense Category) and Costs")
 
-    # (4) legend layout
-    # Clients
-    client_handles = [Patch(facecolor=colors[c], label=c) for c in clients]
-    ax.legend(handles=client_handles,
+    # 4) legend layout
+    client_patches = [Patch(facecolor=colors[c], label=c) for c in clients]
+    ax.legend(handles=client_patches,
               title="Clients",
-              loc='upper center',
+              loc="upper center",
               bbox_to_anchor=(0.5,1.15),
               ncol=min(4,len(clients)))
-    # Expense Categories + Costs
-    cat_handles  = [Patch(facecolor='white', edgecolor='black', hatch=h, label=cat)
+
+    cat_patches  = [Patch(facecolor="white", edgecolor="black", hatch=h, label=cat)
                     for cat,h in hatches.items()]
-    cost_handles = [
+    cost_patches = [
         Patch(facecolor="#d62728", label="Employee Cost"),
         Patch(facecolor="#9467bd", label="Overhead Cost")
     ]
-    fig.legend(handles=cat_handles+cost_handles,
+    fig.legend(handles=cat_patches+cost_patches,
                title="Expense Categories",
-               loc='upper center',
-               bbox_to_anchor=(0.5,1.05),
+               loc="upper center",
+               bbox_to_anchor=(0.5,1.07),
                ncol=3)
 
     fig.tight_layout(rect=[0,0,0.9,1])
@@ -184,7 +194,7 @@ with tab1:
 with tab2:
     fig2, ax2 = plt.subplots(figsize=(14,6))
     l1, = ax2.plot(x, monthly["Paid"],      'o-', label='Paid Revenue')
-    pot  = monthly[["Invoiced","Committed","Proposal"]].sum(axis=1)
+    pot = monthly[["Invoiced","Committed","Proposal"]].sum(axis=1)
     l2, = ax2.plot(x, pot,                  's-', label='Potential Revenue')
     l3, = ax2.plot(x, profit,               '^-', label='Potential Profit')
 
@@ -196,17 +206,17 @@ with tab2:
     ax3.set_ylabel("Profit Margin (%)")
     ax3.yaxis.set_major_formatter(FuncFormatter(lambda p,_: f"{p:.0f}%"))
 
-    # (5) annotate non-zero only, margin always
+    # 5) annotate only non-zero + margin
     for i in range(len(x)):
-        if monthly["Paid"].iloc[i] > 0:
+        if monthly["Paid"].iloc[i]>0:
             ax2.annotate(f"${monthly['Paid'].iloc[i]:,.0f}",
                          (x[i], monthly['Paid'].iloc[i]),
                          xytext=(0,10), textcoords='offset points', ha='center')
-        if pot.iloc[i] > 0:
+        if pot.iloc[i]>0:
             ax2.annotate(f"${pot.iloc[i]:,.0f}",
                          (x[i], pot.iloc[i]),
                          xytext=(0,-10), textcoords='offset points', ha='center')
-        if profit.iloc[i] != 0:
+        if profit.iloc[i]!=0:
             ax2.annotate(f"${profit.iloc[i]:,.0f}",
                          (x[i], profit.iloc[i]),
                          xytext=(0,20), textcoords='offset points', ha='center')
@@ -217,6 +227,7 @@ with tab2:
 
     ax2.set_xticks(x)
     ax2.set_xticklabels([m[:3]+" "+m.split()[1] for m in months], rotation=45)
+    ax2.set_xlabel("Month")
     ax2.set_title("Paid, Potential & Profit Over Time")
 
     fig2.legend(handles=[l1,l2,l3,l4],
