@@ -41,14 +41,10 @@ def fetch_notion_data():
         paid_share = paid_total / n
 
         # 4) Potential revenue per client
-        pot_vals = []
-        for e in p.get("Potential Revenue (rollup)",{}).get("rollup",{}).get("array",[]):
-            if e.get("type")=="formula":
-                s = e["formula"]["string"].replace("$","").replace(",","")
-                pot_vals += [float(v) for v in s.split(",") if v and v.replace(".", "",1).isdigit()]
-        if len(pot_vals) != n:
-            avg = sum(pot_vals)/len(pot_vals) if pot_vals else 0.0
-            pot_vals = [avg]*n
+        calc_rev   = p.get("Calculated Revenue",{}).get("formula",{}).get("number",0) or 0
+        raw_pot    = calc_rev - paid_total
+        pot_share  = max(0, raw_pot) / n
+
 
         # 5) Cost shares
         emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
