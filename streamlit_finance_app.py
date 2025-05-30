@@ -30,7 +30,7 @@ def fetch_notion_data():
         if n == 0:
             continue
 
-        # 2) split categories
+        # 2) split tags (Paid/Invoiced/Committed/Proposal)
         raw_tags = p.get("Expense Category",{}).get("rollup",{}).get("array",[])
         tags = [e.get("select",{}).get("name","") for e in raw_tags if e.get("type")=="select"]
         if len(tags) != n:
@@ -44,10 +44,10 @@ def fetch_notion_data():
         pot_share  = raw_pot     / n
 
         # 4) cost shares
-        emp_tot    = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
-        ovh_tot    = p.get("Overhead Costs",{}).get("number",0) or 0
-        emp_share  = emp_tot / n
-        ovh_share  = ovh_tot / n
+        emp_tot   = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
+        ovh_tot   = p.get("Overhead Costs",{}).get("number",0) or 0
+        emp_share = emp_tot / n
+        ovh_share = ovh_tot / n
 
         # 5) emit one row per client
         for i, client in enumerate(clients):
@@ -77,7 +77,6 @@ months = ['February 2025','March 2025','April 2025',
 df['Month'] = pd.Categorical(df['Month'], categories=months, ordered=True)
 df = df[df['Month'].notna()]
 
-# one row per Month×Client
 df_mc = (
     df.groupby(['Month','Client'], sort=False)
       .sum()[[
@@ -87,7 +86,7 @@ df_mc = (
       .reset_index()
 )
 
-# month‐level totals for line chart
+# month totals
 monthly     = df_mc.groupby('Month').sum().reindex(months, fill_value=0)
 revenue     = monthly[["Paid","Invoiced","Committed","Proposal"]].sum(axis=1)
 costs       = monthly["Employee Cost"] + monthly["Overhead Cost"]
@@ -95,21 +94,21 @@ profit      = revenue - costs
 margin      = np.where(revenue>0, profit/revenue*100, np.nan)
 
 # plotting setup
-clients     = df_mc['Client'].unique().tolist()
-colors      = dict(zip(clients, plt.cm.tab20(np.linspace(0,1,len(clients)))))
-categories  = ["Paid","Invoiced","Committed","Proposal"]
-hatches     = {"Paid":"", "Invoiced":"//", "Committed":"xx", "Proposal":".."}
-x           = np.arange(len(months))
-w           = 0.35
+clients    = df_mc['Client'].unique().tolist()
+colors     = dict(zip(clients, plt.cm.tab20(np.linspace(0,1,len(clients)))))
+categories = ["Paid","Invoiced","Committed","Proposal"]
+hatches    = {"Paid":"", "Invoiced":"//", "Committed":"xx", "Proposal":".."}
+x          = np.arange(len(months))
+w          = 0.35
 
 # --- DRAW CHARTS ---
-tab1, tab2 = st.tabs(["📊 Stacked Bar","📈 Line Chart"])
+tab1, tab2 = st.tabs(["📊 Stacked Bar", "📈 Line Chart"])
 
 with tab1:
     fig, ax = plt.subplots(figsize=(14,7))
-    base = np.zeros(len(months))
 
     # revenue stacks
+    base = np.zeros(len(months))
     for client in clients:
         sub = df_mc[df_mc['Client']==client].set_index('Month').reindex(months, fill_value=0)
         for cat in categories:
@@ -132,14 +131,14 @@ with tab1:
             ax.bar(x[i], revenue.iloc[i], w*2,
                    fill=False, edgecolor='red', linewidth=2)
 
-    # formatting
+    # axes & labels
     ax.set_xticks(x)
     ax.set_xticklabels([m[:3]+" "+m.split()[1] for m in months], rotation=45)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"${y:,.0f}"))
     ax.set_title("Revenue (by Client & Expense Category) and Costs")
     ax.set_xlabel("Month"); ax.set_ylabel("Amount ($)")
 
-    # move legends to the right
+    # legends → right
     client_patches = [Patch(facecolor=colors[c], label=c) for c in clients]
     cat_patches    = [Patch(facecolor='white', edgecolor='black', hatch=h, label=cat)
                       for cat,h in hatches.items()]
@@ -148,26 +147,25 @@ with tab1:
         Patch(facecolor="#9467bd", label="Overhead Cost")
     ]
 
-    # Clients legend
     leg1 = ax.legend(handles=client_patches,
                      title="Clients",
                      loc="upper left",
                      bbox_to_anchor=(1.02, 0.75))
     ax.add_artist(leg1)
 
-    # Expense Categories & Costs legend
     ax.legend(handles=cat_patches + cost_patches,
               title="Expense Categories",
               loc="upper left",
               bbox_to_anchor=(1.02, 0.35))
 
-    fig.tight_layout(rect=[0,0,0.8,1])
+    # make room on the right
+    fig.subplots_adjust(right=0.8)
     st.pyplot(fig)
 
 with tab2:
     fig2, ax2 = plt.subplots(figsize=(14,7))
 
-    # Paid, Potential & Profit lines
+    # lines: Paid, Potential, Profit
     l1 = ax2.plot(x, monthly["Paid"],      'o-', label='Paid Revenue')[0]
     pot_series = monthly[["Invoiced","Committed","Proposal"]].sum(axis=1)
     l2 = ax2.plot(x, pot_series,           's-', label='Potential Revenue')[0]
@@ -178,7 +176,7 @@ with tab2:
     ax3.set_ylabel("Profit Margin (%)")
     ax3.yaxis.set_major_formatter(FuncFormatter(lambda p,_: f"{p:.0f}%"))
 
-    # annotate all four
+    # annotate all four curves
     for i in range(len(x)):
         ax2.annotate(f"${monthly['Paid'].iloc[i]:,.0f}",
                      (x[i], monthly['Paid'].iloc[i]),
@@ -194,15 +192,15 @@ with tab2:
                          (x[i], margin[i]),
                          xytext=(0,30), textcoords='offset points', ha='center')
 
-    # formatting
+    # axes & labels
     ax2.set_xticks(x)
     ax2.set_xticklabels([m[:3]+" "+m.split()[1] for m in months], rotation=45)
     ax2.set_title("Paid, Potential & Profit Over Time")
     ax2.set_xlabel("Month"); ax2.set_ylabel("Amount ($)")
 
-    # move the combined legend to the right
+    # legend → right
     fig2.legend(handles=[l1, l2, l3, l4],
                 loc="center left",
                 bbox_to_anchor=(1.02, 0.5))
-    fig2.tight_layout(rect=[0,0,0.8,1])
+    fig2.subplots_adjust(right=0.8)
     st.pyplot(fig2)
