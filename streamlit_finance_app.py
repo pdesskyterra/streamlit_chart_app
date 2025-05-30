@@ -107,10 +107,39 @@ tab1, tab2 = st.tabs(["📊 Stacked Bar","📈 Line Chart"])
 
 with tab1:
     fig, ax = plt.subplots(figsize=(14,7))
+    base = np.zeros(len(months))
 
-    # … your existing revenue + cost stacks, negative-highlighting, formatting, etc. …
+    # revenue stacks
+    for client in clients:
+        sub = df_mc[df_mc['Client']==client].set_index('Month').reindex(months, fill_value=0)
+        for cat in categories:
+            vals = sub[cat].values
+            ax.bar(x-w/2, vals, w, bottom=base,
+                   color=colors[client],
+                   hatch=hatches[cat],
+                   edgecolor='black' if cat!="Paid" else 'none')
+            base += vals
 
-    # prepare legend patches
+    # cost stacks
+    cbase = np.zeros(len(months))
+    ax.bar(x+w/2, monthly["Employee Cost"], w, bottom=cbase, color="#d62728")
+    cbase += monthly["Employee Cost"]
+    ax.bar(x+w/2, monthly["Overhead Cost"], w, bottom=cbase, color="#9467bd")
+
+    # highlight negatives
+    for i in range(len(months)):
+        if profit.iloc[i] < 0:
+            ax.bar(x[i], revenue.iloc[i], w*2,
+                   fill=False, edgecolor='red', linewidth=2)
+
+    # formatting
+    ax.set_xticks(x)
+    ax.set_xticklabels([m[:3]+" "+m.split()[1] for m in months], rotation=45)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"${y:,.0f}"))
+    ax.set_title("Revenue (by Client & Expense Category) and Costs")
+    ax.set_xlabel("Month"); ax.set_ylabel("Amount ($)")
+
+    # move legends to the right
     client_patches = [Patch(facecolor=colors[c], label=c) for c in clients]
     cat_patches    = [Patch(facecolor='white', edgecolor='black', hatch=h, label=cat)
                       for cat,h in hatches.items()]
@@ -119,27 +148,21 @@ with tab1:
         Patch(facecolor="#9467bd", label="Overhead Cost")
     ]
 
-    # make room on the right side for two legends
-    fig.subplots_adjust(right=0.7)
+    # Clients legend
+    leg1 = ax.legend(handles=client_patches,
+                     title="Clients",
+                     loc="upper left",
+                     bbox_to_anchor=(1.02, 0.75))
+    ax.add_artist(leg1)
 
-    # CLIENTS legend: fully outside the axes on the right
-    fig.legend(
-        handles=client_patches,
-        title="Clients",
-        loc="upper right",
-        bbox_to_anchor=(0.98, 0.75),   # (figure coordinates)
-    )
+    # Expense Categories & Costs legend
+    ax.legend(handles=cat_patches + cost_patches,
+              title="Expense Categories",
+              loc="upper left",
+              bbox_to_anchor=(1.02, 0.35))
 
-    # EXPENSE CATEGORIES & COSTS legend, below the first one
-    fig.legend(
-        handles=cat_patches + cost_patches,
-        title="Expense Categories",
-        loc="upper right",
-        bbox_to_anchor=(0.98, 0.35),
-    )
-
+    fig.tight_layout(rect=[0,0,0.8,1])
     st.pyplot(fig)
-
 
 with tab2:
     fig2, ax2 = plt.subplots(figsize=(14,7))
