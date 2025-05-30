@@ -21,58 +21,71 @@ def fetch_notion_data():
     rows = []
     resp = notion.databases.query(database_id=DATABASE_ID)
 
-    for page in resp.get("results", []):
-        p = page.get("properties", {})
-        month = p.get("Month", {}).get("select", {}).get("name")
+    for page in resp["results"]:
+        p = page["properties"]
+        month = p.get("Month",{}).get("select",{}).get("name")
         if not month:
             continue
-        # Clients
-        raw = p.get("Client", {}).get("formula", {}).get("string", "")
-        clients = [c.strip() for c in raw.split(",") if c.strip()]
-        n = len(clients)
-        if n == 0:
+
+        # 1) Client names
+        raw_clients = p.get("Client",{}).get("formula",{}).get("string","")
+        clients = [c.strip() for c in raw_clients.split(",") if c.strip()]
+        if not clients:
             continue
 
-        # Expense Category tags per client
+        # 2) Expense Category tags
+        raw_tags = p.get("Expense Category",{}).get("rollup",{}).get("array",[])
+        # each element of raw_tags has type 'select'
         tags = []
-        for item in p.get("Expense Category", {}).get("rollup", {}).get("array", []):
-            if item.get("type") == "select":
-                tags.append(item.get("select", {}).get("name", ""))
-        if len(tags) != n:
-            tags = ["Paid"] * n
+        for e in raw_tags:
+            if e.get("type")=="select":
+                tags.append(e["select"]["name"])
+        # fallback: mark any missing as Paid
+        if len(tags)!=len(clients):
+            tags = ["Paid"]*len(clients)
 
-        # Totals
-        paid_total = p.get("Paid Revenue", {}).get("rollup", {}).get("number", 0) or 0
-        # potential = formula field "Calculated Revenue" or rollup
-        calc_rev = p.get("Calculated Revenue", {}).get("formula", {}).get("number", 0) or 0
-        # revenue share
-        paid_share = paid_total / n
-        pot_share  = max(0, calc_rev - paid_total) / n
+        # 3) Paid Revenue per client
+        pr_str = p.get("Paid Revenue",{}).get("rollup",{}).get("formula",{}).get("string","")
+        # fallback to number list
+        if not pr_str:
+            pr_vals = [p.get("Paid Revenue",{}).get("rollup",{}).get("number",0)]*len(clients)
+        else:
+            pr_vals = [float(x.replace("$","").replace(",","")) for x in pr_str.split(",")]
 
-        # Costs
-        emp_tot = p.get("Monthly Employee Cost", {}).get("formula", {}).get("number", 0) or 0
-        ovh_tot = p.get("Overhead Costs", {}).get("number", 0) or 0
-        emp_share = emp_tot / n
-        ovh_share = ovh_tot / n
+        # 4) Potential Revenue per client
+        pot_arr = p.get("Potential Revenue (rollup)",{}).get("rollup",{}).get("array",[])
+        pot_vals = []
+        for e in pot_arr:
+            if e.get("type")=="formula":
+                val = e["formula"]["string"].replace("$","").replace(",","")
+                pot_vals.append(float(val))
+        # fallback
+        if len(pot_vals)!=len(clients):
+            avg = sum(pot_vals)/len(pot_vals) if pot_vals else 0
+            pot_vals = [avg]*len(clients)
 
-        for client, tag in zip(clients, tags):
-            # allocate revenue to the tag bucket only
-            rev_paid = paid_share if tag == "Paid" else 0.0
-            rev_inv  = pot_share  if tag == "Invoiced"  else 0.0
-            rev_comm = pot_share  if tag == "Committed" else 0.0
-            rev_prop = pot_share  if tag == "Proposal"  else 0.0
+        # 5) Costs per client
+        emp = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
+        ovh = p.get("Overhead Costs",{}).get("number",0) or 0
+        emp_share = emp/len(clients)
+        ovh_share = ovh/len(clients)
 
+        # 6) Build rows
+        for client, tag, paid, pot in zip(clients, tags, pr_vals, pot_vals):
+            # allocate revenue exclusively to its tag
             rows.append({
                 "Month": month,
                 "Client": client,
-                "Paid": rev_paid,
-                "Invoiced": rev_inv,
-                "Committed": rev_comm,
-                "Proposal": rev_prop,
+                "Paid":      paid if tag=="Paid" else 0.0,
+                "Invoiced":  pot if tag=="Invoiced" else 0.0,
+                "Committed": pot if tag=="Committed" else 0.0,
+                "Proposal":  pot if tag=="Proposal" else 0.0,
                 "Employee Cost": emp_share,
                 "Overhead Cost": ovh_share
             })
+
     return pd.DataFrame(rows)
+
 
 # --- LOAD & PROCESS ---
 df = fetch_notion_data()
