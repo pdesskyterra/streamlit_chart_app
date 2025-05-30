@@ -71,6 +71,9 @@ df = df[df['Month'].notna()].sort_values(['Month','Client'])
 
 # Aggregate per Month & Client
 df_month = df.groupby(['Month','Client']).sum().reset_index()
+# Zero out potential for February as per expense category rules
+df_month.loc[df_month['Month']=='February 2025', 'Potential Revenue'] = df_month.loc[df_month['Month']=='February 2025', 'Paid Revenue']
+
 clients = sorted(df['Client'].unique())
 colors = dict(zip(clients, plt.cm.tab20(np.linspace(0,1,len(clients)))))
 x = np.arange(len(months))
@@ -96,6 +99,7 @@ with tab1:
         pot_vals  = client_df['Potential Revenue'].values
         ax.bar(x - width/2, paid_vals, width, bottom=stack, color=colors[c])
         stack += paid_vals
+        # only overlay potential beyond paid
         delta = np.maximum(0, pot_vals - paid_vals)
         ax.bar(x - width/2, delta, width, bottom=stack,
                color=colors[c], alpha=0.5, hatch='///')
