@@ -12,7 +12,13 @@ DATABASE_ID  = st.secrets["DATABASE_ID"]
 st.set_page_config(layout="wide")
 st.title("📊 Profit & Expense Tracker (Expense‐Category Basis)")
 
+# ── Refresh Button ──
+if st.button("🔄 Refresh Data"):
+    fetch_notion_data.clear()   # clear cached Notion result
+    st.experimental_rerun()     # rerun the script immediately
+
 # --- FETCH & PROCESS NOTION DATA ---
+@st.cache_data(ttl=600)
 def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
     rows = []
