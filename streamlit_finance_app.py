@@ -12,11 +12,6 @@ DATABASE_ID  = st.secrets["DATABASE_ID"]
 st.set_page_config(layout="wide")
 st.title("📊 Profit & Expense Tracker (Expense‐Category Basis)")
 
-# ── Refresh Button ──
-if st.button("🔄 Refresh Data"):
-    fetch_notion_data.clear()   # clear cached Notion result
-    st.experimental_rerun()     # rerun the script immediately
-
 # --- FETCH & PROCESS NOTION DATA ---
 @st.cache_data(ttl=600)
 def fetch_notion_data():
@@ -76,6 +71,12 @@ def fetch_notion_data():
 
     return pd.DataFrame(rows)
 
+# --- Refresh Button (moved below function) ---
+if st.button("🔄 Refresh Data"):
+    fetch_notion_data.clear()   # clear the cached result
+    st.experimental_rerun()     # rerun immediately so fetch_notion_data() runs again
+
+# --- LOAD DATA ---
 df = fetch_notion_data()
 if df.empty:
     st.warning("No data found or invalid Notion credentials.")
