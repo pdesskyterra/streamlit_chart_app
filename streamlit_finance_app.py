@@ -71,12 +71,6 @@ def fetch_notion_data():
 
     return pd.DataFrame(rows)
 
-# --- Refresh Button (moved below function) ---
-if st.button("🔄 Refresh Data"):
-    fetch_notion_data.clear()   # clear the cached result
-    st.experimental_rerun()     # rerun immediately so fetch_notion_data() runs again
-
-# --- LOAD DATA ---
 df = fetch_notion_data()
 if df.empty:
     st.warning("No data found or invalid Notion credentials.")
