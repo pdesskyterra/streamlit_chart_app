@@ -13,7 +13,6 @@ st.set_page_config(layout="wide")
 st.title("📊 Profit & Expense Tracker (Expense‐Category Basis)")
 
 # --- FETCH & PROCESS NOTION DATA ---
-@st.cache_data(ttl=600)
 def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
     rows = []
