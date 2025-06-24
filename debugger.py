@@ -7,8 +7,8 @@ from matplotlib.ticker import FuncFormatter
 from matplotlib.patches import Patch
 
 # --- Notion Config ---
-NOTION_TOKEN = "Enter your Notion token here"
-DATABASE_ID = "Enter your database ID here"
+NOTION_TOKEN = "ntn_C39727399952EQvWgyq93N3o2dpj78XQZjhLfCpYqXs2vo"
+DATABASE_ID = "1f50eccb339b802699b7d1d1e0d08134"
 
 notion = Client(auth=NOTION_TOKEN)
 response = notion.databases.query(database_id=DATABASE_ID)
