@@ -77,8 +77,13 @@ if df.empty:
     st.stop()
 
 # --- FILTER MONTHS & AGGREGATE ---
-months = ['February 2025','March 2025','April 2025',
-          'May 2025','June 2025','July 2025','August 2025']
+all_months = df['Month'].unique().tolist()
+month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+months = [m for m in all_months if m and any(month in m for month in month_order) and int(m.split()[-1]) >= 2025]
+months = sorted(months, key=lambda x: (int(x.split()[-1]), month_order.index(x.split()[0])))
+feb_index = next((i for i, m in enumerate(months) if 'February' in m), None)
+if feb_index is not None:
+    months = months[feb_index:]
 df['Month'] = pd.Categorical(df['Month'], categories=months, ordered=True)
 df = df[df['Month'].notna()]
 
