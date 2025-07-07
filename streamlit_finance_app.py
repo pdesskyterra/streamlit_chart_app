@@ -157,9 +157,7 @@ def calculate_filtered_costs(month_str, employee_data, cost_tracker_data):
             total_overhead_cost += cost_item["monthly_cost"]
             active_costs.append(cost_item["item"])
     
-    # Debug output
-    if active_employees or active_costs:
-        st.write(f"**{month_str}**: Employee Cost: ${total_employee_cost:,.0f} ({len(active_employees)} active), Overhead: ${total_overhead_cost:,.0f} ({len(active_costs)} items)")
+    # Debug output - store for later display instead of immediate output
     
     return total_employee_cost, total_overhead_cost
 
@@ -174,9 +172,18 @@ def fetch_notion_data():
     
     # Debug info
     if employee_data:
-        st.info(f"Found {len(employee_data)} employees with date filtering")
+        st.success(f"✅ Found {len(employee_data)} employees with date filtering")
+        for emp_name, emp_info in employee_data.items():
+            st.write(f"- {emp_name}: ${emp_info['cost']:,.0f}/month, Start: {emp_info['start_date']}, End: {emp_info['end_date']}")
+    else:
+        st.warning("⚠️ No employee data found - using fallback cost calculation")
+        
     if cost_tracker_data:
-        st.info(f"Found {len(cost_tracker_data)} cost items with date filtering")
+        st.success(f"✅ Found {len(cost_tracker_data)} cost items with date filtering")
+        for cost_item in cost_tracker_data:
+            st.write(f"- {cost_item['item']}: ${cost_item['monthly_cost']:,.0f}/month, Start: {cost_item['start_date']}, End: {cost_item['end_date']}")
+    else:
+        st.warning("⚠️ No cost tracker data found - using fallback cost calculation")
     
     rows = []
     for page in notion.databases.query(database_id=DATABASE_ID)["results"]:
@@ -222,13 +229,16 @@ def fetch_notion_data():
         # Use filtered costs based on employee and cost tracker dates
         if employee_data or cost_tracker_data:
             emp_tot, ovh_tot = calculate_filtered_costs(month, employee_data, cost_tracker_data)
+            st.write(f"🔍 {month}: Filtered costs - Employee: ${emp_tot:,.0f}, Overhead: ${ovh_tot:,.0f}")
         else:
             # Fallback to existing logic if no separate databases
             emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
             ovh_tot = p.get("Overhead Costs",{}).get("number",0) or 0
+            st.write(f"🔄 {month}: Fallback costs - Employee: ${emp_tot:,.0f}, Overhead: ${ovh_tot:,.0f}")
         
         emp_share = emp_tot / n if n > 0 else 0
         ovh_share = ovh_tot / n if n > 0 else 0
+        st.write(f"👥 {month}: Shares for {n} clients - Employee: ${emp_share:,.0f}, Overhead: ${ovh_share:,.0f}")
 
         # 5) Emit one row per client
         for i, client in enumerate(clients):
@@ -246,7 +256,19 @@ def fetch_notion_data():
                 "Overhead Cost": ovh_share
             })
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    
+    # Debug: Show cost summary after data processing
+    if not df.empty:
+        st.write("### 💰 Cost Data Summary")
+        cost_summary = df.groupby('Month')[['Employee Cost', 'Overhead Cost']].sum()
+        for month in cost_summary.index:
+            emp_cost = cost_summary.loc[month, 'Employee Cost']
+            ovh_cost = cost_summary.loc[month, 'Overhead Cost']
+            total_cost = emp_cost + ovh_cost
+            st.write(f"**{month}**: Employee: ${emp_cost:,.0f} | Overhead: ${ovh_cost:,.0f} | Total: ${total_cost:,.0f}")
+    
+    return df
 
 df = fetch_notion_data()
 if df.empty:
