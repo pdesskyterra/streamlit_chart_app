@@ -11,8 +11,8 @@ from datetime import datetime
 # --- CONFIG & PAGE SETUP ---
 NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
 DATABASE_ID  = st.secrets["DATABASE_ID"]
-EMPLOYEE_DB_ID = st.secrets.get("EMPLOYEE_DB_ID", "")
-COST_TRACKER_DB_ID = st.secrets.get("COST_TRACKER_DB_ID", "")
+EMPLOYEE_DB_ID = st.secrets.get("EMPLOYEE_DB_ID")
+COST_TRACKER_DB_ID = st.secrets.get("COST_TRACKER_DB_ID")
 st.set_page_config(layout="wide")
 st.title("📊 Profit & Expense Tracker (Expense‐Category Basis)")
 
@@ -26,12 +26,22 @@ def fetch_employee_data(notion):
         employee_data = {}
         for page in notion.databases.query(database_id=EMPLOYEE_DB_ID)["results"]:
             props = page["properties"]
-            name = props.get("Name", {}).get("title", [{}])[0].get("text", {}).get("content", "")
+            
+            # Get name from title field
+            name_prop = props.get("Name", {})
+            if name_prop.get("title"):
+                name = name_prop["title"][0].get("text", {}).get("content", "") if name_prop["title"] else ""
+            else:
+                name = ""
+            
             if not name:
                 continue
                 
-            start_date = props.get("Start Date", {}).get("date", {}).get("start")
-            end_date = props.get("End Date", {}).get("date", {}).get("start")
+            # Get dates - they are date fields
+            start_date = props.get("Start Date", {}).get("date", {}).get("start") if props.get("Start Date", {}).get("date") else None
+            end_date = props.get("End Date", {}).get("date", {}).get("start") if props.get("End Date", {}).get("date") else None
+            
+            # Get employee cost
             employee_cost = props.get("Employee Cost", {}).get("number", 0) or 0
             
             employee_data[name] = {
@@ -54,11 +64,22 @@ def fetch_cost_tracker_data(notion):
         for page in notion.databases.query(database_id=COST_TRACKER_DB_ID)["results"]:
             props = page["properties"]
             
-            cost_item = props.get("Cost Item", {}).get("title", [{}])[0].get("text", {}).get("content", "")
-            start_date = props.get("Start Date", {}).get("date", {}).get("start")
-            end_date = props.get("End Date", {}).get("date", {}).get("start")
+            # Get cost item from title field
+            cost_item_prop = props.get("Cost Item", {})
+            if cost_item_prop.get("title"):
+                cost_item = cost_item_prop["title"][0].get("text", {}).get("content", "") if cost_item_prop["title"] else ""
+            else:
+                cost_item = ""
+            
+            # Get dates - they are date fields
+            start_date = props.get("Start Date", {}).get("date", {}).get("start") if props.get("Start Date", {}).get("date") else None
+            end_date = props.get("End Date", {}).get("date", {}).get("start") if props.get("End Date", {}).get("date") else None
+            
+            # Get monthly cost
             monthly_cost = props.get("Active Costs/Month", {}).get("number", 0) or 0
-            category = props.get("Category", {}).get("select", {}).get("name", "")
+            
+            # Get category
+            category = props.get("Category", {}).get("select", {}).get("name", "") if props.get("Category", {}).get("select") else ""
             
             cost_data.append({
                 "item": cost_item,
@@ -126,10 +147,25 @@ def fetch_notion_data():
     employee_data = fetch_employee_data(notion)
     cost_tracker_data = fetch_cost_tracker_data(notion)
     
+    # Debug info
+    if employee_data:
+        st.info(f"Found {len(employee_data)} employees with date filtering")
+    if cost_tracker_data:
+        st.info(f"Found {len(cost_tracker_data)} cost items with date filtering")
+    
     rows = []
     for page in notion.databases.query(database_id=DATABASE_ID)["results"]:
         p     = page["properties"]
-        month = p.get("Month",{}).get("select",{}).get("name")
+        # Handle different Month field types
+        month_prop = p.get("Month", {})
+        if month_prop.get("select"):
+            month = month_prop["select"].get("name")
+        elif month_prop.get("title"):
+            month = month_prop["title"][0].get("text", {}).get("content", "") if month_prop["title"] else ""
+        elif month_prop.get("rich_text"):
+            month = month_prop["rich_text"][0].get("text", {}).get("content", "") if month_prop["rich_text"] else ""
+        else:
+            month = None
         if not month:
             continue
 
