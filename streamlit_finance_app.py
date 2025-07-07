@@ -93,6 +93,7 @@ def fetch_cost_tracker_data(notion):
             # Get monthly cost - comprehensive field checking
             monthly_cost = 0
             cost_fields = [" Active Costs/Month", "Active Costs/Month", "Cost/Month", "Monthly Cost", "Cost", "Amount", "Price"]
+            field_found = None
             
             # First try the exact field names we know exist
             for field_name in cost_fields:
@@ -100,12 +101,15 @@ def fetch_cost_tracker_data(notion):
                     field_data = props[field_name]
                     if field_data.get("number") is not None:
                         monthly_cost = field_data["number"]
+                        field_found = f"{field_name} (number)"
                         break
                     elif field_data.get("formula", {}).get("number") is not None:
                         monthly_cost = field_data["formula"]["number"]
+                        field_found = f"{field_name} (formula)"
                         break
                     elif field_data.get("rollup", {}).get("number") is not None:
                         monthly_cost = field_data["rollup"]["number"]
+                        field_found = f"{field_name} (rollup)"
                         break
             
             # Get category
@@ -116,7 +120,8 @@ def fetch_cost_tracker_data(notion):
                 "start_date": start_date,
                 "end_date": end_date,
                 "monthly_cost": monthly_cost,
-                "category": category
+                "category": category,
+                "field_source": field_found  # Track which field was used
             })
         return cost_data
     except Exception as e:
@@ -130,6 +135,10 @@ def calculate_filtered_costs(month_str, employee_data, cost_tracker_data):
         current_year_month = (current_month.year, current_month.month)
     except (ValueError, TypeError):
         return 0, 0
+    
+    # Debug: Track cost calculation for this month
+    if month_str in ["June 2025", "July 2025", "August 2025"]:
+        st.write(f"### 🔍 Debug: {month_str} Cost Calculation")
     
     # Filter employee costs
     total_employee_cost = 0
@@ -186,8 +195,17 @@ def calculate_filtered_costs(month_str, employee_data, cost_tracker_data):
         if cost_active:
             total_overhead_cost += cost_item["monthly_cost"]
             active_costs.append(cost_item["item"])
+            
+        # Debug: Show cost item details for target months
+        if month_str in ["June 2025", "July 2025", "August 2025"]:
+            status = "✅ ACTIVE" if cost_active else "❌ INACTIVE"
+            field_info = cost_item.get('field_source', 'unknown field')
+            st.write(f"- {cost_item['item']}: ${cost_item['monthly_cost']:,.0f} | Start: {cost_item['start_date']} | End: {cost_item['end_date']} | {status} | Source: {field_info}")
     
-    # Debug output - store for later display instead of immediate output
+    # Debug: Show totals for target months
+    if month_str in ["June 2025", "July 2025", "August 2025"]:
+        st.write(f"**{month_str} TOTALS**: Employee: ${total_employee_cost:,.0f} | Overhead: ${total_overhead_cost:,.0f}")
+        st.write("---")
     
     return total_employee_cost, total_overhead_cost
 
