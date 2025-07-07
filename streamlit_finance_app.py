@@ -24,8 +24,14 @@ def fetch_employee_data(notion):
     
     try:
         employee_data = {}
+        first_page = True
         for page in notion.databases.query(database_id=EMPLOYEE_DB_ID)["results"]:
             props = page["properties"]
+            
+            # Debug: Show available fields in first record
+            if first_page:
+                st.write("**Available Employee fields:**", list(props.keys()))
+                first_page = False
             
             # Get name from title field
             name_prop = props.get("Name", {})
@@ -41,8 +47,17 @@ def fetch_employee_data(notion):
             start_date = props.get("Start Date", {}).get("date", {}).get("start") if props.get("Start Date", {}).get("date") else None
             end_date = props.get("End Date", {}).get("date", {}).get("start") if props.get("End Date", {}).get("date") else None
             
-            # Get employee cost
-            employee_cost = props.get("Employee Cost", {}).get("number", 0) or 0
+            # Get employee cost - try different possible field names and types
+            employee_cost = 0
+            cost_fields = ["Employee Cost", "Monthly Cost", "Cost", "Hourly Rate", "Bill Rate"]
+            for field_name in cost_fields:
+                field_data = props.get(field_name, {})
+                if field_data.get("number") is not None:
+                    employee_cost = field_data["number"]
+                    break
+                elif field_data.get("formula", {}).get("number") is not None:
+                    employee_cost = field_data["formula"]["number"]
+                    break
             
             employee_data[name] = {
                 "start_date": start_date,
@@ -61,8 +76,14 @@ def fetch_cost_tracker_data(notion):
     
     try:
         cost_data = []
+        first_page = True
         for page in notion.databases.query(database_id=COST_TRACKER_DB_ID)["results"]:
             props = page["properties"]
+            
+            # Debug: Show available fields in first record
+            if first_page:
+                st.write("**Available Cost Tracker fields:**", list(props.keys()))
+                first_page = False
             
             # Get cost item from title field
             cost_item_prop = props.get("Cost Item", {})
@@ -75,8 +96,17 @@ def fetch_cost_tracker_data(notion):
             start_date = props.get("Start Date", {}).get("date", {}).get("start") if props.get("Start Date", {}).get("date") else None
             end_date = props.get("End Date", {}).get("date", {}).get("start") if props.get("End Date", {}).get("date") else None
             
-            # Get monthly cost
-            monthly_cost = props.get("Active Costs/Month", {}).get("number", 0) or 0
+            # Get monthly cost - try different possible field names and types
+            monthly_cost = 0
+            cost_fields = ["Active Costs/Month", "Monthly Cost", "Cost", "Amount", "Price"]
+            for field_name in cost_fields:
+                field_data = props.get(field_name, {})
+                if field_data.get("number") is not None:
+                    monthly_cost = field_data["number"]
+                    break
+                elif field_data.get("formula", {}).get("number") is not None:
+                    monthly_cost = field_data["formula"]["number"]
+                    break
             
             # Get category
             category = props.get("Category", {}).get("select", {}).get("name", "") if props.get("Category", {}).get("select") else ""
@@ -175,6 +205,13 @@ def fetch_notion_data():
         st.success(f"✅ Found {len(employee_data)} employees with date filtering")
         for emp_name, emp_info in employee_data.items():
             st.write(f"- {emp_name}: ${emp_info['cost']:,.0f}/month, Start: {emp_info['start_date']}, End: {emp_info['end_date']}")
+        
+        # Show which employees have non-zero costs
+        active_emp_costs = {name: info['cost'] for name, info in employee_data.items() if info['cost'] > 0}
+        if active_emp_costs:
+            st.write(f"**Employees with costs:** {active_emp_costs}")
+        else:
+            st.warning("⚠️ All employee costs are $0 - check field names in Employee database")
     else:
         st.warning("⚠️ No employee data found - using fallback cost calculation")
         
@@ -182,6 +219,13 @@ def fetch_notion_data():
         st.success(f"✅ Found {len(cost_tracker_data)} cost items with date filtering")
         for cost_item in cost_tracker_data:
             st.write(f"- {cost_item['item']}: ${cost_item['monthly_cost']:,.0f}/month, Start: {cost_item['start_date']}, End: {cost_item['end_date']}")
+            
+        # Show which cost items have non-zero costs
+        active_costs = {item['item']: item['monthly_cost'] for item in cost_tracker_data if item['monthly_cost'] > 0}
+        if active_costs:
+            st.write(f"**Cost items with values:** {active_costs}")
+        else:
+            st.warning("⚠️ All cost items are $0 - check field names in Cost Tracker database")
     else:
         st.warning("⚠️ No cost tracker data found - using fallback cost calculation")
     
