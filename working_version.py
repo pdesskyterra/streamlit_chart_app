@@ -97,44 +97,69 @@ def calculate_filtered_costs(month_str, employee_data, cost_tracker_data):
     """Calculate filtered employee and overhead costs for a given month"""
     try:
         current_month = datetime.strptime(month_str, "%B %Y")
+        current_year_month = (current_month.year, current_month.month)
     except (ValueError, TypeError):
         return 0, 0
     
     # Filter employee costs
     total_employee_cost = 0
+    active_employees = []
     for emp_name, emp_info in employee_data.items():
         emp_active = True
         
         if emp_info["start_date"]:
-            start_date = datetime.strptime(emp_info["start_date"], "%Y-%m-%d")
-            if current_month < start_date:
-                emp_active = False
+            try:
+                start_date = datetime.strptime(emp_info["start_date"], "%Y-%m-%d")
+                start_year_month = (start_date.year, start_date.month)
+                if current_year_month < start_year_month:
+                    emp_active = False
+            except ValueError:
+                pass
         
         if emp_info["end_date"]:
-            end_date = datetime.strptime(emp_info["end_date"], "%Y-%m-%d")
-            if current_month > end_date:
-                emp_active = False
+            try:
+                end_date = datetime.strptime(emp_info["end_date"], "%Y-%m-%d")
+                end_year_month = (end_date.year, end_date.month)
+                if current_year_month > end_year_month:
+                    emp_active = False
+            except ValueError:
+                pass
         
         if emp_active:
             total_employee_cost += emp_info["cost"]
+            active_employees.append(emp_name)
     
     # Filter overhead costs
     total_overhead_cost = 0
+    active_costs = []
     for cost_item in cost_tracker_data:
         cost_active = True
         
         if cost_item["start_date"]:
-            start_date = datetime.strptime(cost_item["start_date"], "%Y-%m-%d")
-            if current_month < start_date:
-                cost_active = False
+            try:
+                start_date = datetime.strptime(cost_item["start_date"], "%Y-%m-%d")
+                start_year_month = (start_date.year, start_date.month)
+                if current_year_month < start_year_month:
+                    cost_active = False
+            except ValueError:
+                pass
         
         if cost_item["end_date"]:
-            end_date = datetime.strptime(cost_item["end_date"], "%Y-%m-%d")
-            if current_month > end_date:
-                cost_active = False
+            try:
+                end_date = datetime.strptime(cost_item["end_date"], "%Y-%m-%d")
+                end_year_month = (end_date.year, end_date.month)
+                if current_year_month > end_year_month:
+                    cost_active = False
+            except ValueError:
+                pass
         
         if cost_active:
             total_overhead_cost += cost_item["monthly_cost"]
+            active_costs.append(cost_item["item"])
+    
+    # Debug output
+    if active_employees or active_costs:
+        st.write(f"**{month_str}**: Employee Cost: ${total_employee_cost:,.0f} ({len(active_employees)} active), Overhead: ${total_overhead_cost:,.0f} ({len(active_costs)} items)")
     
     return total_employee_cost, total_overhead_cost
 
