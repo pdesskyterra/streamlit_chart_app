@@ -11,12 +11,121 @@ from datetime import datetime
 # --- CONFIG & PAGE SETUP ---
 NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
 DATABASE_ID  = st.secrets["DATABASE_ID"]
+EMPLOYEE_DB_ID = st.secrets.get("EMPLOYEE_DB_ID", "")
+COST_TRACKER_DB_ID = st.secrets.get("COST_TRACKER_DB_ID", "")
 st.set_page_config(layout="wide")
 st.title("📊 Profit & Expense Tracker (Expense‐Category Basis)")
 
+# --- HELPER FUNCTIONS ---
+def fetch_employee_data(notion):
+    """Fetch employee data with start/end dates"""
+    if not EMPLOYEE_DB_ID:
+        return {}
+    
+    try:
+        employee_data = {}
+        for page in notion.databases.query(database_id=EMPLOYEE_DB_ID)["results"]:
+            props = page["properties"]
+            name = props.get("Name", {}).get("title", [{}])[0].get("text", {}).get("content", "")
+            if not name:
+                continue
+                
+            start_date = props.get("Start Date", {}).get("date", {}).get("start")
+            end_date = props.get("End Date", {}).get("date", {}).get("start")
+            employee_cost = props.get("Employee Cost", {}).get("number", 0) or 0
+            
+            employee_data[name] = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "cost": employee_cost
+            }
+        return employee_data
+    except Exception as e:
+        st.warning(f"Could not fetch employee data: {e}")
+        return {}
+
+def fetch_cost_tracker_data(notion):
+    """Fetch cost tracker data with start/end dates"""
+    if not COST_TRACKER_DB_ID:
+        return []
+    
+    try:
+        cost_data = []
+        for page in notion.databases.query(database_id=COST_TRACKER_DB_ID)["results"]:
+            props = page["properties"]
+            
+            cost_item = props.get("Cost Item", {}).get("title", [{}])[0].get("text", {}).get("content", "")
+            start_date = props.get("Start Date", {}).get("date", {}).get("start")
+            end_date = props.get("End Date", {}).get("date", {}).get("start")
+            monthly_cost = props.get("Active Costs/Month", {}).get("number", 0) or 0
+            category = props.get("Category", {}).get("select", {}).get("name", "")
+            
+            cost_data.append({
+                "item": cost_item,
+                "start_date": start_date,
+                "end_date": end_date,
+                "monthly_cost": monthly_cost,
+                "category": category
+            })
+        return cost_data
+    except Exception as e:
+        st.warning(f"Could not fetch cost tracker data: {e}")
+        return []
+
+def calculate_filtered_costs(month_str, employee_data, cost_tracker_data):
+    """Calculate filtered employee and overhead costs for a given month"""
+    try:
+        current_month = datetime.strptime(month_str, "%B %Y")
+    except (ValueError, TypeError):
+        return 0, 0
+    
+    # Filter employee costs
+    total_employee_cost = 0
+    for emp_name, emp_info in employee_data.items():
+        emp_active = True
+        
+        if emp_info["start_date"]:
+            start_date = datetime.strptime(emp_info["start_date"], "%Y-%m-%d")
+            if current_month < start_date:
+                emp_active = False
+        
+        if emp_info["end_date"]:
+            end_date = datetime.strptime(emp_info["end_date"], "%Y-%m-%d")
+            if current_month > end_date:
+                emp_active = False
+        
+        if emp_active:
+            total_employee_cost += emp_info["cost"]
+    
+    # Filter overhead costs
+    total_overhead_cost = 0
+    for cost_item in cost_tracker_data:
+        cost_active = True
+        
+        if cost_item["start_date"]:
+            start_date = datetime.strptime(cost_item["start_date"], "%Y-%m-%d")
+            if current_month < start_date:
+                cost_active = False
+        
+        if cost_item["end_date"]:
+            end_date = datetime.strptime(cost_item["end_date"], "%Y-%m-%d")
+            if current_month > end_date:
+                cost_active = False
+        
+        if cost_active:
+            total_overhead_cost += cost_item["monthly_cost"]
+    
+    return total_employee_cost, total_overhead_cost
+
 # --- FETCH & PROCESS NOTION DATA ---
+@st.cache_data(ttl=600)
 def fetch_notion_data():
     notion = Client(auth=NOTION_TOKEN)
+    
+    # Fetch employee and cost tracker data
+    employee_data = fetch_employee_data(notion)
+    cost_tracker_data = fetch_cost_tracker_data(notion)
+    
     rows = []
     for page in notion.databases.query(database_id=DATABASE_ID)["results"]:
         p     = page["properties"]
@@ -49,35 +158,16 @@ def fetch_notion_data():
             pot_vals = [avg]*n
 
         # 4) Cost shares with date filtering
-        emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
-        ovh_tot = p.get("Overhead Costs",{}).get("number",0) or 0
+        # Use filtered costs based on employee and cost tracker dates
+        if employee_data or cost_tracker_data:
+            emp_tot, ovh_tot = calculate_filtered_costs(month, employee_data, cost_tracker_data)
+        else:
+            # Fallback to existing logic if no separate databases
+            emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
+            ovh_tot = p.get("Overhead Costs",{}).get("number",0) or 0
         
-        # Get employee start and end dates to filter costs
-        current_month_str = month
-        if current_month_str:
-            try:
-                current_month = datetime.strptime(current_month_str, "%B %Y")
-                
-                # Check if employee records have start/end dates
-                emp_start_date = p.get("Employee Start Date",{}).get("date",{}).get("start")
-                emp_end_date = p.get("Employee End Date",{}).get("date",{}).get("start")
-                
-                # Filter employee costs based on dates
-                if emp_start_date:
-                    start_date = datetime.strptime(emp_start_date, "%Y-%m-%d")
-                    if current_month < start_date:
-                        emp_tot = 0
-                
-                if emp_end_date:
-                    end_date = datetime.strptime(emp_end_date, "%Y-%m-%d")
-                    if current_month > end_date:
-                        emp_tot = 0
-                        
-            except (ValueError, TypeError):
-                pass
-        
-        emp_share = emp_tot / n
-        ovh_share = ovh_tot / n
+        emp_share = emp_tot / n if n > 0 else 0
+        ovh_share = ovh_tot / n if n > 0 else 0
 
         # 5) Emit one row per client
         for i, client in enumerate(clients):
