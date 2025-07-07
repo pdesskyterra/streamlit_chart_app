@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 from matplotlib.patches import Patch
 from notion_client import Client
+from datetime import datetime
 
 # --- CONFIG & PAGE SETUP ---
 NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
@@ -47,9 +48,34 @@ def fetch_notion_data():
             avg = sum(pot_vals)/len(pot_vals) if pot_vals else 0.0
             pot_vals = [avg]*n
 
-        # 4) Cost shares
+        # 4) Cost shares with date filtering
         emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
         ovh_tot = p.get("Overhead Costs",{}).get("number",0) or 0
+        
+        # Get employee start and end dates to filter costs
+        current_month_str = month
+        if current_month_str:
+            try:
+                current_month = datetime.strptime(current_month_str, "%B %Y")
+                
+                # Check if employee records have start/end dates
+                emp_start_date = p.get("Employee Start Date",{}).get("date",{}).get("start")
+                emp_end_date = p.get("Employee End Date",{}).get("date",{}).get("start")
+                
+                # Filter employee costs based on dates
+                if emp_start_date:
+                    start_date = datetime.strptime(emp_start_date, "%Y-%m-%d")
+                    if current_month < start_date:
+                        emp_tot = 0
+                
+                if emp_end_date:
+                    end_date = datetime.strptime(emp_end_date, "%Y-%m-%d")
+                    if current_month > end_date:
+                        emp_tot = 0
+                        
+            except (ValueError, TypeError):
+                pass
+        
         emp_share = emp_tot / n
         ovh_share = ovh_tot / n
 
