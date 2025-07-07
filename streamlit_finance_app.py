@@ -96,9 +96,9 @@ def fetch_cost_tracker_data(notion):
             start_date = props.get("Start Date", {}).get("date", {}).get("start") if props.get("Start Date", {}).get("date") else None
             end_date = props.get("End Date", {}).get("date", {}).get("start") if props.get("End Date", {}).get("date") else None
             
-            # Get monthly cost - try different possible field names and types
+            # Get monthly cost - try different possible field names and types (note the space in " Active Costs/Month")
             monthly_cost = 0
-            cost_fields = ["Active Costs/Month", "Monthly Cost", "Cost", "Amount", "Price"]
+            cost_fields = ["Active Costs/Month", "Cost/Month", "Active Costs/Month", "Monthly Cost", "Cost", "Amount", "Price"]
             for field_name in cost_fields:
                 field_data = props.get(field_name, {})
                 if field_data.get("number") is not None:
