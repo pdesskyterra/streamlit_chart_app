@@ -96,17 +96,23 @@ def fetch_cost_tracker_data(notion):
             start_date = props.get("Start Date", {}).get("date", {}).get("start") if props.get("Start Date", {}).get("date") else None
             end_date = props.get("End Date", {}).get("date", {}).get("start") if props.get("End Date", {}).get("date") else None
             
-            # Get monthly cost - try different possible field names and types (note the space in " Active Costs/Month")
+            # Get monthly cost - comprehensive field checking
             monthly_cost = 0
-            cost_fields = [" Active Costs/Month", "Cost/Month", "Active Costs/Month", "Monthly Cost", "Cost", "Amount", "Price"]
+            cost_fields = [" Active Costs/Month", "Active Costs/Month", "Cost/Month", "Monthly Cost", "Cost", "Amount", "Price"]
+            
+            # First try the exact field names we know exist
             for field_name in cost_fields:
-                field_data = props.get(field_name, {})
-                if field_data.get("number") is not None:
-                    monthly_cost = field_data["number"]
-                    break
-                elif field_data.get("formula", {}).get("number") is not None:
-                    monthly_cost = field_data["formula"]["number"]
-                    break
+                if field_name in props:
+                    field_data = props[field_name]
+                    if field_data.get("number") is not None:
+                        monthly_cost = field_data["number"]
+                        break
+                    elif field_data.get("formula", {}).get("number") is not None:
+                        monthly_cost = field_data["formula"]["number"]
+                        break
+                    elif field_data.get("rollup", {}).get("number") is not None:
+                        monthly_cost = field_data["rollup"]["number"]
+                        break
             
             # Get category
             category = props.get("Category", {}).get("select", {}).get("name", "") if props.get("Category", {}).get("select") else ""

@@ -28,10 +28,7 @@ def fetch_employee_data(notion):
         for page in notion.databases.query(database_id=EMPLOYEE_DB_ID)["results"]:
             props = page["properties"]
             
-            # Debug: Show available fields in first record
-            if first_page:
-                st.write("**Available Employee fields:**", list(props.keys()))
-                first_page = False
+            # Skip debug output for clean version
             
             # Get name from title field
             name_prop = props.get("Name", {})
@@ -80,10 +77,7 @@ def fetch_cost_tracker_data(notion):
         for page in notion.databases.query(database_id=COST_TRACKER_DB_ID)["results"]:
             props = page["properties"]
             
-            # Debug: Show available fields in first record
-            if first_page:
-                st.write("**Available Cost Tracker fields:**", list(props.keys()))
-                first_page = False
+            # Skip debug output for clean version
             
             # Get cost item from title field
             cost_item_prop = props.get("Cost Item", {})
@@ -96,17 +90,23 @@ def fetch_cost_tracker_data(notion):
             start_date = props.get("Start Date", {}).get("date", {}).get("start") if props.get("Start Date", {}).get("date") else None
             end_date = props.get("End Date", {}).get("date", {}).get("start") if props.get("End Date", {}).get("date") else None
             
-            # Get monthly cost - try different possible field names and types (note the space in " Active Costs/Month")
+            # Get monthly cost - comprehensive field checking
             monthly_cost = 0
-            cost_fields = ["Active Costs/Month", "Cost/Month", "Active Costs/Month", "Monthly Cost", "Cost", "Amount", "Price"]
+            cost_fields = [" Active Costs/Month", "Active Costs/Month", "Cost/Month", "Monthly Cost", "Cost", "Amount", "Price"]
+            
+            # First try the exact field names we know exist
             for field_name in cost_fields:
-                field_data = props.get(field_name, {})
-                if field_data.get("number") is not None:
-                    monthly_cost = field_data["number"]
-                    break
-                elif field_data.get("formula", {}).get("number") is not None:
-                    monthly_cost = field_data["formula"]["number"]
-                    break
+                if field_name in props:
+                    field_data = props[field_name]
+                    if field_data.get("number") is not None:
+                        monthly_cost = field_data["number"]
+                        break
+                    elif field_data.get("formula", {}).get("number") is not None:
+                        monthly_cost = field_data["formula"]["number"]
+                        break
+                    elif field_data.get("rollup", {}).get("number") is not None:
+                        monthly_cost = field_data["rollup"]["number"]
+                        break
             
             # Get category
             category = props.get("Category", {}).get("select", {}).get("name", "") if props.get("Category", {}).get("select") else ""
@@ -200,34 +200,7 @@ def fetch_notion_data():
     employee_data = fetch_employee_data(notion)
     cost_tracker_data = fetch_cost_tracker_data(notion)
     
-    # Debug info
-    if employee_data:
-        st.success(f"✅ Found {len(employee_data)} employees with date filtering")
-        for emp_name, emp_info in employee_data.items():
-            st.write(f"- {emp_name}: ${emp_info['cost']:,.0f}/month, Start: {emp_info['start_date']}, End: {emp_info['end_date']}")
-        
-        # Show which employees have non-zero costs
-        active_emp_costs = {name: info['cost'] for name, info in employee_data.items() if info['cost'] > 0}
-        if active_emp_costs:
-            st.write(f"**Employees with costs:** {active_emp_costs}")
-        else:
-            st.warning("⚠️ All employee costs are $0 - check field names in Employee database")
-    else:
-        st.warning("⚠️ No employee data found - using fallback cost calculation")
-        
-    if cost_tracker_data:
-        st.success(f"✅ Found {len(cost_tracker_data)} cost items with date filtering")
-        for cost_item in cost_tracker_data:
-            st.write(f"- {cost_item['item']}: ${cost_item['monthly_cost']:,.0f}/month, Start: {cost_item['start_date']}, End: {cost_item['end_date']}")
-            
-        # Show which cost items have non-zero costs
-        active_costs = {item['item']: item['monthly_cost'] for item in cost_tracker_data if item['monthly_cost'] > 0}
-        if active_costs:
-            st.write(f"**Cost items with values:** {active_costs}")
-        else:
-            st.warning("⚠️ All cost items are $0 - check field names in Cost Tracker database")
-    else:
-        st.warning("⚠️ No cost tracker data found - using fallback cost calculation")
+    # Clean version - no debug output
     
     rows = []
     for page in notion.databases.query(database_id=DATABASE_ID)["results"]:
@@ -273,16 +246,13 @@ def fetch_notion_data():
         # Use filtered costs based on employee and cost tracker dates
         if employee_data or cost_tracker_data:
             emp_tot, ovh_tot = calculate_filtered_costs(month, employee_data, cost_tracker_data)
-            st.write(f"🔍 {month}: Filtered costs - Employee: ${emp_tot:,.0f}, Overhead: ${ovh_tot:,.0f}")
         else:
             # Fallback to existing logic if no separate databases
             emp_tot = p.get("Monthly Employee Cost",{}).get("formula",{}).get("number",0) or 0
             ovh_tot = p.get("Overhead Costs",{}).get("number",0) or 0
-            st.write(f"🔄 {month}: Fallback costs - Employee: ${emp_tot:,.0f}, Overhead: ${ovh_tot:,.0f}")
         
         emp_share = emp_tot / n if n > 0 else 0
         ovh_share = ovh_tot / n if n > 0 else 0
-        st.write(f"👥 {month}: Shares for {n} clients - Employee: ${emp_share:,.0f}, Overhead: ${ovh_share:,.0f}")
 
         # 5) Emit one row per client
         for i, client in enumerate(clients):
@@ -300,19 +270,7 @@ def fetch_notion_data():
                 "Overhead Cost": ovh_share
             })
 
-    df = pd.DataFrame(rows)
-    
-    # Debug: Show cost summary after data processing
-    if not df.empty:
-        st.write("### 💰 Cost Data Summary")
-        cost_summary = df.groupby('Month')[['Employee Cost', 'Overhead Cost']].sum()
-        for month in cost_summary.index:
-            emp_cost = cost_summary.loc[month, 'Employee Cost']
-            ovh_cost = cost_summary.loc[month, 'Overhead Cost']
-            total_cost = emp_cost + ovh_cost
-            st.write(f"**{month}**: Employee: ${emp_cost:,.0f} | Overhead: ${ovh_cost:,.0f} | Total: ${total_cost:,.0f}")
-    
-    return df
+    return pd.DataFrame(rows)
 
 df = fetch_notion_data()
 if df.empty:
