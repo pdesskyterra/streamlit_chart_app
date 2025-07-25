@@ -256,6 +256,8 @@ def fetch_notion_data():
                 s = e["formula"]["string"].replace("$","").replace(",","")
                 # split comma‐separated list
                 pot_vals += [float(v) for v in s.split(",") if v and v.replace(".", "", 1).isdigit()]
+            elif e.get("type")=="number" and e.get("number") is not None:
+                pot_vals.append(float(e["number"]))
         if len(pot_vals) != n:
             avg = sum(pot_vals)/len(pot_vals) if pot_vals else 0.0
             pot_vals = [avg]*n
