@@ -566,6 +566,7 @@ with st.sidebar:
             st.write(f"• {tag}: {count} records")
         
         # Month coverage analysis
+        all_months = df['Month'].unique().tolist()
         st.markdown("**Month Coverage:**")
         st.write(f"• Total months in data: {len(all_months)}")
         st.write(f"• Months after filtering: {len(months)}")
