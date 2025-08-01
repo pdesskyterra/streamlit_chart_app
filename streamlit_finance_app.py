@@ -564,6 +564,21 @@ with st.sidebar:
         st.markdown("**Overall Tag Distribution:**")
         for tag, count in tag_dist.items():
             st.write(f"• {tag}: {count} records")
+        
+        # Month coverage analysis
+        st.markdown("**Month Coverage:**")
+        st.write(f"• Total months in data: {len(all_months)}")
+        st.write(f"• Months after filtering: {len(months)}")
+        st.write(f"• Year range: {min_year} onwards")
+        
+        # Proposal data analysis
+        proposal_months = df[df['Tag'] == 'Proposal']['Month'].unique()
+        st.write(f"• Months with Proposal data: {len(proposal_months)}")
+        if len(proposal_months) > 0:
+            st.write(f"  - {', '.join(sorted(proposal_months))}")
+        
+        proposal_total = df[df['Tag'] == 'Proposal']['Proposal'].sum()
+        st.write(f"• Total Proposal value: ${proposal_total:,.0f}")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -690,11 +705,16 @@ if selected_clients:
 # --- FILTER MONTHS & AGGREGATE ---
 all_months = filtered_df['Month'].unique().tolist()
 month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-months = [m for m in all_months if m and any(month in m for month in month_order) and int(m.split()[-1]) >= 2025]
+
+# Get all months with any data (remove hard-coded February filter)
+months = [m for m in all_months if m and any(month in m for month in month_order)]
+
+# Filter by year if needed (keep configurable minimum year)
+min_year = 2024  # Made configurable instead of hard-coded 2025
+months = [m for m in months if int(m.split()[-1]) >= min_year]
+
+# Sort months chronologically
 months = sorted(months, key=lambda x: (int(x.split()[-1]), month_order.index(x.split()[0])))
-feb_index = next((i for i, m in enumerate(months) if 'February' in m), None)
-if feb_index is not None:
-    months = months[feb_index:]
 filtered_df['Month'] = pd.Categorical(filtered_df['Month'], categories=months, ordered=True)
 filtered_df = filtered_df[filtered_df['Month'].notna()]
 
@@ -970,7 +990,7 @@ with tab1:
         # Add client revenue with composition patterns (stacked within each client segment)
         current_client_base = running_total.copy()
         
-        # Paid (solid base)
+        # Paid (solid base with full opacity)
         if any(val > 0 for val in client_paid_data):
             fig_bars.add_trace(go.Bar(
                 name=f'{client} - Paid',
@@ -978,6 +998,7 @@ with tab1:
                 y=client_paid_data,
                 base=current_client_base,
                 marker_color=base_color,
+                opacity=1.0,
                 offsetgroup=0,
                 legendgroup=client,
                 legendgrouptitle_text=client,
@@ -988,7 +1009,7 @@ with tab1:
             for j in range(len(months)):
                 current_client_base[j] += client_paid_data[j]
         
-        # Invoiced (diagonal pattern)
+        # Invoiced (diagonal pattern with better visibility)
         if any(val > 0 for val in client_invoiced_data):
             fig_bars.add_trace(go.Bar(
                 name=f'{client} - Invoiced',
@@ -997,7 +1018,8 @@ with tab1:
                 base=current_client_base,
                 marker_color=base_color,
                 marker_pattern_shape="/",
-                marker_pattern_solidity=0.3,
+                marker_pattern_solidity=0.6,
+                opacity=0.85,
                 offsetgroup=0,
                 legendgroup=client,
                 customdata=custom_hover_data,
@@ -1007,7 +1029,7 @@ with tab1:
             for j in range(len(months)):
                 current_client_base[j] += client_invoiced_data[j]
         
-        # Contract Signed (cross pattern)
+        # Contract Signed (cross pattern with enhanced visibility)
         if any(val > 0 for val in client_sow_data):
             fig_bars.add_trace(go.Bar(
                 name=f'{client} - Contract Signed',
@@ -1016,7 +1038,8 @@ with tab1:
                 base=current_client_base,
                 marker_color=base_color,
                 marker_pattern_shape="x",
-                marker_pattern_solidity=0.4,
+                marker_pattern_solidity=0.7,
+                opacity=0.8,
                 offsetgroup=0,
                 legendgroup=client,
                 customdata=custom_hover_data,
@@ -1026,7 +1049,7 @@ with tab1:
             for j in range(len(months)):
                 current_client_base[j] += client_sow_data[j]
         
-        # Proposal (dots pattern)
+        # Proposal (enhanced pattern for better visibility)
         if any(val > 0 for val in client_proposal_data):
             fig_bars.add_trace(go.Bar(
                 name=f'{client} - Proposal',
@@ -1034,8 +1057,10 @@ with tab1:
                 y=client_proposal_data,
                 base=current_client_base,
                 marker_color=base_color,
-                marker_pattern_shape=".",
-                marker_pattern_solidity=0.5,
+                marker_pattern_shape="+",
+                marker_pattern_solidity=0.8,
+                marker_line_width=1,
+                opacity=0.9,
                 offsetgroup=0,
                 legendgroup=client,
                 customdata=custom_hover_data,
@@ -1072,34 +1097,6 @@ with tab1:
         hovertemplate='<b>Overhead Cost</b><br>Month: %{x}<br>Amount: $%{y:,.0f}<extra></extra>'
     ))
     
-    # Add profit margin annotations
-    for i, month in enumerate(months):
-        month_revenue = monthly["Paid"].iloc[i] if i < len(monthly) else 0
-        month_profit = profit.iloc[i] if i < len(profit) else 0
-        margin_pct = (month_profit / month_revenue * 100) if month_revenue > 0 else 0
-        
-        # Growth arrow
-        if i > 0:
-            prev_revenue = monthly["Paid"].iloc[i-1] if i-1 < len(monthly) else 0
-            growth = ((month_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0
-            arrow = "📈" if growth > 0 else "📉" if growth < 0 else "➡️"
-        else:
-            arrow = ""
-        
-        # Calculate total revenue for annotation positioning  
-        month_data = df_mc[df_mc['Month'] == month]
-        total_revenue = month_data[['Paid', 'Invoiced', 'Contract Signed', 'Proposal']].sum().sum()
-        
-        fig_bars.add_annotation(
-            x=month,
-            y=max(total_revenue, monthly["Employee Cost"].iloc[i] + monthly["Overhead Cost"].iloc[i]) * 1.1,
-            text=f"{arrow}<br>{margin_pct:.1f}%",
-            showarrow=False,
-            font=dict(size=10, color="black"),
-            bgcolor="rgba(255,255,255,0.8)",
-            bordercolor="gray",
-            borderwidth=1
-        )
     
     fig_bars.update_layout(
         title='Client Revenue (Stacked by Category) vs Costs',
@@ -1343,12 +1340,11 @@ with tab1:
     # Pattern Legend
     st.markdown("""
     **📊 Chart Pattern Guide:**
-    - **Solid bars**: Paid revenue (confirmed income)
-    - **Diagonal lines (///)**: Invoiced revenue (billed, awaiting payment)  
-    - **Cross pattern (xxx)**: Contract Signed revenue (contracted, not yet invoiced)
-    - **Dots (...)**: Proposal revenue (potential opportunities)
+    - **Solid bars**: Paid revenue (confirmed income) - Full opacity
+    - **Diagonal lines (///)**: Invoiced revenue (billed, awaiting payment) - 85% opacity
+    - **Cross pattern (xxx)**: Contract Signed revenue (contracted, not yet invoiced) - 80% opacity
+    - **Plus pattern (+++)**: Proposal revenue (potential opportunities) - 90% opacity, enhanced visibility
     - **Red/Purple bars**: Employee and Overhead costs
-    - **Annotations**: Profit margin % with growth trend arrows
     
     **📈 Conversion Rate Analysis:**
     - **Overall Conversion Rate**: Green line showing success rate (Contract Signed + Invoiced + Paid / Total Revenue)
