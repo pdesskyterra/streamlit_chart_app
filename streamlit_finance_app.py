@@ -569,8 +569,11 @@ with st.sidebar:
         all_months = df['Month'].unique().tolist()
         st.markdown("**Month Coverage:**")
         st.write(f"• Total months in data: {len(all_months)}")
-        st.write(f"• Months after filtering: {len(months)}")
-        st.write(f"• Year range: {min_year} onwards")
+        if 'months' in locals() and 'min_year' in locals():
+            st.write(f"• Months after filtering: {len(months)}")
+            st.write(f"• Year range: {min_year} onwards")
+        else:
+            st.write("• Filtering data...")
         
         # Proposal data analysis
         proposal_months = df[df['Tag'] == 'Proposal']['Month'].unique()
@@ -877,12 +880,13 @@ clients = df_mc['Client'].unique().tolist()
 categories = ["Paid","Invoiced","Contract Signed","Proposal"]
 
 # Color schemes
-client_colors = px.colors.qualitative.Set3[:len(clients)]
+# Use a color palette without yellow, purple, or cost colors (red #E74C3C, purple #9B59B6)
+client_colors = ['#2E86C1', '#27AE60', '#17A2B8', '#6C757D', '#1ABC9C', '#34495E', '#E67E22', '#3498DB', '#16A085', '#2C3E50'][:len(clients)]
 category_colors = {
     'Paid': '#2E86C1',
-    'Invoiced': '#F39C12', 
-    'Contract Signed': '#28B463',
-    'Proposal': '#AF7AC5'
+    'Invoiced': '#8E44AD', 
+    'Contract Signed': '#27AE60',
+    'Proposal': '#E67E22'
 }
 
 # --- INTERACTIVE CHARTS ---
@@ -1298,7 +1302,7 @@ with tab1:
                 x=conv_df['Month'],
                 y=conv_df['Invoice Success'],
                 mode='lines+markers',
-                line=dict(color='#F39C12', width=2, dash='dot'),
+                line=dict(color='#E67E22', width=2, dash='dot'),
                 marker=dict(size=6),
                 hovertemplate='<b>Invoice Success</b><br>Month: %{x}<br>Rate: %{y:.1f}%<extra></extra>'
             ))
@@ -1387,7 +1391,7 @@ with tab2:
             x=months,
             y=pot_series.values,
             mode='lines+markers',
-            line=dict(color='#F39C12', width=2, dash='dash'),
+            line=dict(color='#8E44AD', width=2, dash='dash'),
             marker=dict(size=6),
             hovertemplate='<b>Pipeline Revenue</b><br>Month: %{x}<br>Amount: $%{y:,.0f}<extra></extra>'
         ))
@@ -1495,7 +1499,7 @@ with tab2:
             x=future_months,
             y=predictions,
             mode='lines+markers',
-            line=dict(color='#F39C12', width=3, dash='dash'),
+            line=dict(color='#E67E22', width=3, dash='dash'),
             marker=dict(size=8),
             hovertemplate='<b>Forecast</b><br>Period: %{x}<br>Predicted: $%{y:,.0f}<extra></extra>'
         ))
@@ -1510,7 +1514,7 @@ with tab2:
             x=future_months + future_months[::-1],
             y=upper_bound + lower_bound[::-1],
             fill='toself',
-            fillcolor='rgba(243,156,18,0.2)',
+            fillcolor='rgba(230,126,34,0.2)',
             line=dict(color='rgba(255,255,255,0)'),
             showlegend=False,
             hoverinfo="skip"
@@ -1562,7 +1566,7 @@ with tab2:
                 y='Growth Rate (%)',
                 title='Month-over-Month Growth Rate',
                 color='Growth Rate (%)',
-                color_continuous_scale=['red', 'yellow', 'green'],
+                color_continuous_scale=['#E74C3C', '#E67E22', '#27AE60'],
                 height=400
             )
             
